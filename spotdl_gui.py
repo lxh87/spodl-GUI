@@ -117,7 +117,7 @@ class SpotDLGUI(ctk.CTk):
             "format": "mp3",
             "bitrate": "320k",
             "threads": "4",
-            "output": "{artists} - {title}.{output-ext}",
+            "output": "{album-artist}/{year} - {album}/{track-number} - {title}.{output-ext}",
             "audio_providers": ["youtube-music", "youtube"],
             "lyrics_providers": ["genius", "musixmatch"],
             "download_folder": str(Path.home() / "Music"),
@@ -331,15 +331,33 @@ class SpotDLGUI(ctk.CTk):
         )
         folder_per_url_check.grid(row=2, column=2, sticky="w", padx=10, pady=(5, 10))
 
+        # Buttons frame
+        buttons_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        buttons_frame.grid(row=6, column=0, sticky="ew")
+        buttons_frame.grid_columnconfigure(0, weight=3)
+        buttons_frame.grid_columnconfigure(1, weight=1)
+
         # Download button
         self.download_btn = ctk.CTkButton(
-            frame,
+            buttons_frame,
             text="⬇️ Download",
             height=50,
             font=ctk.CTkFont(size=16, weight="bold"),
             command=self.start_download
         )
-        self.download_btn.grid(row=6, column=0, sticky="ew")
+        self.download_btn.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+
+        # Open folder button
+        self.open_folder_btn = ctk.CTkButton(
+            buttons_frame,
+            text="📁 Open Folder",
+            height=50,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            command=self.open_download_folder,
+            fg_color="gray40",
+            hover_color="gray30"
+        )
+        self.open_folder_btn.grid(row=0, column=1, sticky="ew", padx=(5, 0))
 
     def create_queue_frame(self):
         """Create the queue tab"""
@@ -396,12 +414,19 @@ class SpotDLGUI(ctk.CTk):
         folder_frame.grid(row=1, column=0, sticky="ew", pady=(0, 20))
         folder_frame.grid_columnconfigure(1, weight=1)
 
-        folder_label = ctk.CTkLabel(folder_frame, text="Download Folder:")
-        folder_label.grid(row=0, column=0, padx=10, pady=10, sticky="w")
+        folder_label = ctk.CTkLabel(
+            folder_frame,
+            text="Base Download Folder:",
+            font=ctk.CTkFont(weight="bold")
+        )
+        folder_label.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w", columnspan=3)
+
+        folder_label2 = ctk.CTkLabel(folder_frame, text="Folder:")
+        folder_label2.grid(row=1, column=0, padx=10, pady=5, sticky="w")
 
         self.folder_entry = ctk.CTkEntry(folder_frame)
         self.folder_entry.insert(0, self.settings.get("download_folder", str(Path.home() / "Music")))
-        self.folder_entry.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
+        self.folder_entry.grid(row=1, column=1, padx=10, pady=5, sticky="ew")
 
         browse_btn = ctk.CTkButton(
             folder_frame,
@@ -409,7 +434,17 @@ class SpotDLGUI(ctk.CTk):
             width=100,
             command=self.browse_folder
         )
-        browse_btn.grid(row=0, column=2, padx=10, pady=10)
+        browse_btn.grid(row=1, column=2, padx=10, pady=5)
+
+        open_folder_btn = ctk.CTkButton(
+            folder_frame,
+            text="📁 Open Folder",
+            width=100,
+            command=self.open_download_folder,
+            fg_color="gray40",
+            hover_color="gray30"
+        )
+        open_folder_btn.grid(row=1, column=3, padx=(0, 10), pady=5)
 
         # Output template
         template_frame = ctk.CTkFrame(frame)
@@ -418,22 +453,64 @@ class SpotDLGUI(ctk.CTk):
 
         template_label = ctk.CTkLabel(
             template_frame,
-            text="Output Template:",
+            text="Output Folder & File Structure:",
             font=ctk.CTkFont(weight="bold")
         )
         template_label.grid(row=0, column=0, sticky="w", padx=10, pady=(10, 5))
 
         self.template_entry = ctk.CTkEntry(template_frame)
-        self.template_entry.insert(0, self.settings.get("output", "{artists} - {title}.{output-ext}"))
-        self.template_entry.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 10))
+        self.template_entry.insert(0, self.settings.get("output", "{album-artist}/{year} - {album}/{track-number} - {title}.{output-ext}"))
+        self.template_entry.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 5))
 
         # Template help
         help_text = ctk.CTkLabel(
             template_frame,
-            text="Variables: {title}, {artist}, {artists}, {album}, {year}, {track-number}, etc.",
+            text="💡 This creates folders AND filenames. Use / for folders.",
+            text_color="gray",
+            font=ctk.CTkFont(size=11)
+        )
+        help_text.grid(row=2, column=0, sticky="w", padx=10, pady=(0, 5))
+
+        # Template examples
+        examples_label = ctk.CTkLabel(
+            template_frame,
+            text="Examples:",
+            font=ctk.CTkFont(size=11, weight="bold"),
             text_color="gray"
         )
-        help_text.grid(row=2, column=0, sticky="w", padx=10, pady=(0, 10))
+        examples_label.grid(row=3, column=0, sticky="w", padx=10, pady=(5, 2))
+
+        example1 = ctk.CTkLabel(
+            template_frame,
+            text="• {album-artist}/{year} - {album}/{track-number} - {title}.{output-ext}",
+            text_color="gray",
+            font=ctk.CTkFont(size=10)
+        )
+        example1.grid(row=4, column=0, sticky="w", padx=20, pady=1)
+
+        example2 = ctk.CTkLabel(
+            template_frame,
+            text="• {artist}/{album}/{title}.{output-ext}",
+            text_color="gray",
+            font=ctk.CTkFont(size=10)
+        )
+        example2.grid(row=5, column=0, sticky="w", padx=20, pady=1)
+
+        example3 = ctk.CTkLabel(
+            template_frame,
+            text="• {artists} - {title}.{output-ext}  (flat structure, no folders)",
+            text_color="gray",
+            font=ctk.CTkFont(size=10)
+        )
+        example3.grid(row=6, column=0, sticky="w", padx=20, pady=(1, 5))
+
+        variables_label = ctk.CTkLabel(
+            template_frame,
+            text="Variables: {title}, {artist}, {artists}, {album}, {album-artist}, {year}, {track-number}, {disc-number}, {genre}, {output-ext}",
+            text_color="gray",
+            font=ctk.CTkFont(size=9)
+        )
+        variables_label.grid(row=7, column=0, sticky="w", padx=10, pady=(0, 10))
 
         # Threads
         threads_frame = ctk.CTkFrame(frame)
@@ -481,6 +558,30 @@ class SpotDLGUI(ctk.CTk):
         if folder:
             self.folder_entry.delete(0, "end")
             self.folder_entry.insert(0, folder)
+
+    def open_download_folder(self):
+        """Open the download folder in system file explorer"""
+        folder = self.folder_entry.get()
+
+        if not os.path.exists(folder):
+            messagebox.showwarning(
+                "Folder Not Found",
+                f"The folder doesn't exist yet:\n{folder}\n\nIt will be created when you download something."
+            )
+            return
+
+        try:
+            # Windows
+            if sys.platform == "win32":
+                os.startfile(folder)
+            # macOS
+            elif sys.platform == "darwin":
+                subprocess.run(["open", folder])
+            # Linux
+            else:
+                subprocess.run(["xdg-open", folder])
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open folder:\n{str(e)}")
 
     def log_to_queue(self, message):
         """Add a message to the queue display"""

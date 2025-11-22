@@ -8,10 +8,11 @@ import customtkinter as ctk
 import subprocess
 import threading
 import os
+import json
 from pathlib import Path
 from tkinter import filedialog, messagebox
-import queue
 import sys
+from datetime import datetime
 
 # Set appearance
 ctk.set_appearance_mode("dark")
@@ -22,9 +23,12 @@ class SpotDLGUI(ctk.CTk):
     def __init__(self):
         super().__init__()
 
+        # Config file location
+        self.config_file = Path.home() / ".spotdl_gui_config.json"
+
         # Window setup
         self.title("SpotDL GUI")
-        self.geometry("1000x700")
+        self.geometry("1100x750")
 
         # Configure grid
         self.grid_columnconfigure(1, weight=1)
@@ -85,6 +89,9 @@ class SpotDLGUI(ctk.CTk):
         self.main_frame.grid_columnconfigure(0, weight=1)
         self.main_frame.grid_rowconfigure(0, weight=1)
 
+        # Load settings first
+        self.load_settings()
+
         # Initialize frames
         self.frames = {}
         self.create_download_frame()
@@ -95,22 +102,61 @@ class SpotDLGUI(ctk.CTk):
         self.download_queue = []
         self.current_process = None
 
-        # Default settings
-        self.settings = {
+        # Show download frame by default
+        self.show_frame("download")
+
+        # Check SpotDL
+        self.check_spotdl()
+
+        # Save settings on close
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def load_settings(self):
+        """Load settings from config file"""
+        default_settings = {
             "format": "mp3",
             "bitrate": "320k",
             "threads": "4",
             "output": "{artists} - {title}.{output-ext}",
             "audio_providers": ["youtube-music", "youtube"],
             "lyrics_providers": ["genius", "musixmatch"],
-            "download_folder": str(Path.home() / "Music")
+            "download_folder": str(Path.home() / "Music"),
+            "theme": "dark",
+            "create_folder_per_url": False
         }
 
-        # Show download frame by default
-        self.show_frame("download")
+        if self.config_file.exists():
+            try:
+                with open(self.config_file, 'r') as f:
+                    self.settings = {**default_settings, **json.load(f)}
+            except:
+                self.settings = default_settings
+        else:
+            self.settings = default_settings
 
-        # Check SpotDL
-        self.check_spotdl()
+    def save_settings(self):
+        """Save settings to config file"""
+        try:
+            # Update settings from UI
+            self.settings["format"] = self.format_var.get()
+            self.settings["bitrate"] = self.bitrate_var.get()
+            self.settings["threads"] = self.threads_var.get()
+            self.settings["output"] = self.template_entry.get()
+            self.settings["download_folder"] = self.folder_entry.get()
+            self.settings["theme"] = "dark" if self.theme_switch.get() == "dark" else "light"
+            self.settings["create_folder_per_url"] = self.folder_per_url_var.get()
+
+            with open(self.config_file, 'w') as f:
+                json.dump(self.settings, f, indent=2)
+
+            self.log_to_queue(f"✅ Settings saved to {self.config_file}\n")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save settings: {str(e)}")
+
+    def on_closing(self):
+        """Handle window close event"""
+        self.save_settings()
+        self.destroy()
 
     def check_spotdl(self):
         """Check if SpotDL is installed"""
@@ -203,7 +249,7 @@ class SpotDLGUI(ctk.CTk):
         format_label = ctk.CTkLabel(options_frame, text="Format:")
         format_label.grid(row=0, column=0, sticky="w", padx=10, pady=(10, 5))
 
-        self.format_var = ctk.StringVar(value="mp3")
+        self.format_var = ctk.StringVar(value=self.settings.get("format", "mp3"))
         format_menu = ctk.CTkOptionMenu(
             options_frame,
             variable=self.format_var,
@@ -215,7 +261,7 @@ class SpotDLGUI(ctk.CTk):
         bitrate_label = ctk.CTkLabel(options_frame, text="Bitrate:")
         bitrate_label.grid(row=0, column=1, sticky="w", padx=10, pady=(10, 5))
 
-        self.bitrate_var = ctk.StringVar(value="320k")
+        self.bitrate_var = ctk.StringVar(value=self.settings.get("bitrate", "320k"))
         bitrate_menu = ctk.CTkOptionMenu(
             options_frame,
             variable=self.bitrate_var,
@@ -265,7 +311,7 @@ class SpotDLGUI(ctk.CTk):
             text="Generate LRC",
             variable=self.generate_lrc_var
         )
-        lrc_check.grid(row=2, column=0, sticky="w", padx=10, pady=(0, 10))
+        lrc_check.grid(row=2, column=0, sticky="w", padx=10, pady=5)
 
         self.playlist_numbering_var = ctk.BooleanVar()
         numbering_check = ctk.CTkCheckBox(
@@ -273,7 +319,17 @@ class SpotDLGUI(ctk.CTk):
             text="Playlist Numbering",
             variable=self.playlist_numbering_var
         )
-        numbering_check.grid(row=2, column=1, sticky="w", padx=10, pady=(0, 10))
+        numbering_check.grid(row=2, column=1, sticky="w", padx=10, pady=5)
+
+        self.folder_per_url_var = ctk.BooleanVar(
+            value=self.settings.get("create_folder_per_url", False)
+        )
+        folder_per_url_check = ctk.CTkCheckBox(
+            advanced_frame,
+            text="Folder per URL",
+            variable=self.folder_per_url_var
+        )
+        folder_per_url_check.grid(row=2, column=2, sticky="w", padx=10, pady=(5, 10))
 
         # Download button
         self.download_btn = ctk.CTkButton(
@@ -293,24 +349,33 @@ class SpotDLGUI(ctk.CTk):
         self.frames["queue"] = frame
 
         # Title
+        header_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        header_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        header_frame.grid_columnconfigure(0, weight=1)
+
         title = ctk.CTkLabel(
-            frame,
-            text="Download Queue",
+            header_frame,
+            text="Download Queue & Output",
             font=ctk.CTkFont(size=24, weight="bold")
         )
-        title.grid(row=0, column=0, pady=(0, 20), sticky="w")
-
-        # Queue list
-        self.queue_textbox = ctk.CTkTextbox(frame, state="disabled")
-        self.queue_textbox.grid(row=1, column=0, sticky="nsew")
+        title.grid(row=0, column=0, sticky="w")
 
         # Clear button
         clear_btn = ctk.CTkButton(
-            frame,
+            header_frame,
             text="Clear Queue",
+            width=120,
             command=self.clear_queue
         )
-        clear_btn.grid(row=2, column=0, pady=(10, 0))
+        clear_btn.grid(row=0, column=1, padx=(10, 0))
+
+        # Queue list (now with real-time output)
+        self.queue_textbox = ctk.CTkTextbox(
+            frame,
+            state="disabled",
+            font=ctk.CTkFont(family="Consolas", size=11)
+        )
+        self.queue_textbox.grid(row=1, column=0, sticky="nsew")
 
     def create_settings_frame(self):
         """Create the settings tab"""
@@ -335,7 +400,7 @@ class SpotDLGUI(ctk.CTk):
         folder_label.grid(row=0, column=0, padx=10, pady=10, sticky="w")
 
         self.folder_entry = ctk.CTkEntry(folder_frame)
-        self.folder_entry.insert(0, str(Path.home() / "Music"))
+        self.folder_entry.insert(0, self.settings.get("download_folder", str(Path.home() / "Music")))
         self.folder_entry.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
 
         browse_btn = ctk.CTkButton(
@@ -359,7 +424,7 @@ class SpotDLGUI(ctk.CTk):
         template_label.grid(row=0, column=0, sticky="w", padx=10, pady=(10, 5))
 
         self.template_entry = ctk.CTkEntry(template_frame)
-        self.template_entry.insert(0, "{artists} - {title}.{output-ext}")
+        self.template_entry.insert(0, self.settings.get("output", "{artists} - {title}.{output-ext}"))
         self.template_entry.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 10))
 
         # Template help
@@ -377,7 +442,7 @@ class SpotDLGUI(ctk.CTk):
         threads_label = ctk.CTkLabel(threads_frame, text="Concurrent Downloads:")
         threads_label.grid(row=0, column=0, padx=10, pady=10, sticky="w")
 
-        self.threads_var = ctk.StringVar(value="4")
+        self.threads_var = ctk.StringVar(value=self.settings.get("threads", "4"))
         threads_slider = ctk.CTkSlider(
             threads_frame,
             from_=1,
@@ -385,11 +450,30 @@ class SpotDLGUI(ctk.CTk):
             number_of_steps=15,
             command=lambda v: self.threads_var.set(str(int(v)))
         )
-        threads_slider.set(4)
+        threads_slider.set(int(self.settings.get("threads", "4")))
         threads_slider.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
 
         threads_value = ctk.CTkLabel(threads_frame, textvariable=self.threads_var)
         threads_value.grid(row=0, column=2, padx=10, pady=10)
+
+        # Save settings button
+        save_btn = ctk.CTkButton(
+            frame,
+            text="💾 Save Settings",
+            height=40,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            command=self.save_settings
+        )
+        save_btn.grid(row=4, column=0, sticky="ew", pady=(0, 10))
+
+        # Config file location
+        config_label = ctk.CTkLabel(
+            frame,
+            text=f"Config saved to: {self.config_file}",
+            text_color="gray",
+            font=ctk.CTkFont(size=10)
+        )
+        config_label.grid(row=5, column=0, sticky="w")
 
     def browse_folder(self):
         """Browse for download folder"""
@@ -397,6 +481,13 @@ class SpotDLGUI(ctk.CTk):
         if folder:
             self.folder_entry.delete(0, "end")
             self.folder_entry.insert(0, folder)
+
+    def log_to_queue(self, message):
+        """Add a message to the queue display"""
+        self.queue_textbox.configure(state="normal")
+        self.queue_textbox.insert("end", message)
+        self.queue_textbox.configure(state="disabled")
+        self.queue_textbox.see("end")
 
     def start_download(self):
         """Start a download"""
@@ -427,55 +518,85 @@ class SpotDLGUI(ctk.CTk):
         if self.playlist_numbering_var.get():
             cmd.append("--playlist-numbering")
 
-        # Add to queue
-        self.add_to_queue(query, cmd)
+        # Determine download folder
+        download_folder = self.folder_entry.get()
+
+        # If "folder per URL" is enabled, create a subfolder
+        if self.folder_per_url_var.get():
+            # Create folder name from URL/query
+            folder_name = self.sanitize_folder_name(query)
+            download_folder = os.path.join(download_folder, folder_name)
+            os.makedirs(download_folder, exist_ok=True)
+
+        # Log start
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.log_to_queue(f"\n{'='*60}\n")
+        self.log_to_queue(f"[{timestamp}] 📥 Starting download\n")
+        self.log_to_queue(f"Query: {query}\n")
+        self.log_to_queue(f"Folder: {download_folder}\n")
+        self.log_to_queue(f"Command: {' '.join(cmd)}\n")
+        self.log_to_queue(f"{'='*60}\n\n")
 
         # Clear input
         self.url_entry.delete(0, "end")
 
+        # Switch to queue tab
+        self.show_frame("queue")
+
         # Start download in thread
-        threading.Thread(target=self.run_download, args=(cmd,), daemon=True).start()
+        threading.Thread(
+            target=self.run_download,
+            args=(cmd, download_folder, query),
+            daemon=True
+        ).start()
 
-    def add_to_queue(self, query, cmd):
-        """Add item to download queue display"""
-        self.queue_textbox.configure(state="normal")
-        self.queue_textbox.insert("end", f"📥 {query}\n")
-        self.queue_textbox.insert("end", f"   Command: {' '.join(cmd)}\n")
-        self.queue_textbox.insert("end", f"   Status: Downloading...\n\n")
-        self.queue_textbox.configure(state="disabled")
-        self.queue_textbox.see("end")
+    def sanitize_folder_name(self, url_or_query):
+        """Create a safe folder name from URL or query"""
+        # Extract meaningful part from URL
+        if "spotify.com" in url_or_query:
+            parts = url_or_query.split("/")
+            if len(parts) >= 2:
+                return f"spotify_{parts[-2]}_{parts[-1][:8]}"
+        elif "youtube.com" in url_or_query or "youtu.be" in url_or_query:
+            return f"youtube_{url_or_query.split('=')[-1][:8]}"
 
-    def run_download(self, cmd):
-        """Run spotdl command in background"""
+        # For other queries, just sanitize
+        safe_name = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in url_or_query)
+        return safe_name[:50]  # Limit length
+
+    def run_download(self, cmd, download_folder, query):
+        """Run spotdl command in background with real-time output"""
         try:
-            # Change to download folder
-            download_folder = self.folder_entry.get()
             os.makedirs(download_folder, exist_ok=True)
 
+            # Start process
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=subprocess.STDOUT,  # Merge stderr into stdout
                 text=True,
+                bufsize=1,  # Line buffered
                 cwd=download_folder
             )
 
-            stdout, stderr = process.communicate()
+            # Read output line by line in real-time
+            for line in process.stdout:
+                self.log_to_queue(line)
 
-            # Update queue
-            self.queue_textbox.configure(state="normal")
+            # Wait for completion
+            process.wait()
+
+            # Log completion
+            timestamp = datetime.now().strftime("%H:%M:%S")
             if process.returncode == 0:
-                self.queue_textbox.insert("end", "✅ Download completed!\n\n")
+                self.log_to_queue(f"\n[{timestamp}] ✅ Download completed successfully!\n")
+                self.log_to_queue(f"📁 Files saved to: {download_folder}\n")
             else:
-                self.queue_textbox.insert("end", f"❌ Download failed: {stderr}\n\n")
-            self.queue_textbox.configure(state="disabled")
-            self.queue_textbox.see("end")
+                self.log_to_queue(f"\n[{timestamp}] ❌ Download failed with exit code {process.returncode}\n")
 
         except Exception as e:
-            self.queue_textbox.configure(state="normal")
-            self.queue_textbox.insert("end", f"❌ Error: {str(e)}\n\n")
-            self.queue_textbox.configure(state="disabled")
-            self.queue_textbox.see("end")
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            self.log_to_queue(f"\n[{timestamp}] ❌ Error: {str(e)}\n")
 
     def clear_queue(self):
         """Clear the queue display"""

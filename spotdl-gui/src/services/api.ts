@@ -7,7 +7,8 @@ import type {
 } from '../types/spotdl';
 
 // Base API URL - this will connect to the backend (Python FastAPI or spotdl web server)
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8800/api';
+// Use relative URL to work with Vite proxy in development
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,

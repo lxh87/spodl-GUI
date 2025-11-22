@@ -1,7 +1,2 @@
-# Desktop GUI (recommended)
+# Desktop GUI only
 customtkinter==5.2.2
-
-# Web GUI backend (optional)
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-pydantic==2.10.6

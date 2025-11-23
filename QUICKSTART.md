@@ -41,9 +41,11 @@ python spotdl_gui.py
 
 ### **Download Tab:**
 - URL input with quick shortcuts (Liked Songs, Playlists, etc.)
+- **Playlist Name**: Optional custom name for playlists (leave blank for auto-naming)
 - Format: MP3, FLAC, OGG, Opus, M4A, WAV
 - Bitrate: Auto, 320k, 256k, 192k, etc.
 - Advanced: Preload, skip sponsors, generate lyrics, etc.
+- **Organize Playlists**: Auto-organize playlists in Playlists/{playlist-name} folder
 - **Folder per URL**: Create separate folder for each download
 - **📁 Open Folder button**: Open download folder instantly
 
@@ -155,13 +157,30 @@ pip install customtkinter
 
 ---
 
+## 📃 Playlist Organization
+
+When **"Organize Playlists"** is enabled (on by default):
+
+- **Spotify playlists**: Automatically saved to `Music/Playlists/{playlist-name}/`
+- **YouTube playlists**: Saved to `Music/Playlists/{playlist-name}/`
+- **Custom naming**: Enter a name in "Playlist Folder Name" field to customize
+- **Auto-naming**: Leave blank to use auto-generated names like "Spotify_Playlist_xxxxx"
+
+### Examples:
+- **Liked Songs** → `Music/Playlists/Liked Songs/`
+- **Custom name** → `Music/Playlists/My Workout Mix/`
+- **Spotify playlist** (auto) → `Music/Playlists/Spotify_Playlist_37i9dQZ/`
+
+---
+
 ## 💡 Pro Tips
 
 1. **Organize by year**: Use `{album-artist}/{year} - {album}/...`
 2. **Batch download**: Paste playlist URLs
 3. **High quality**: Use FLAC format + auto bitrate
 4. **Watch progress**: Queue tab shows real-time output
-5. **Folder per URL**: Check the box to organize each download separately
+5. **Playlist folders**: Name your playlists or let SpotDL auto-organize them
+6. **Folder per URL**: Check the box to organize each download separately
 
 ---
 

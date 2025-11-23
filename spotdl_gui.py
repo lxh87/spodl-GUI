@@ -122,7 +122,8 @@ class SpotDLGUI(ctk.CTk):
             "lyrics_providers": ["genius", "musixmatch"],
             "download_folder": str(Path.home() / "Music"),
             "theme": "dark",
-            "create_folder_per_url": False
+            "create_folder_per_url": False,
+            "organize_playlists": True
         }
 
         if self.config_file.exists():
@@ -145,6 +146,7 @@ class SpotDLGUI(ctk.CTk):
             self.settings["download_folder"] = self.folder_entry.get()
             self.settings["theme"] = "dark" if self.theme_switch.get() == "dark" else "light"
             self.settings["create_folder_per_url"] = self.folder_per_url_var.get()
+            self.settings["organize_playlists"] = self.organize_playlists_var.get()
 
             with open(self.config_file, 'w') as f:
                 json.dump(self.settings, f, indent=2)
@@ -176,6 +178,61 @@ class SpotDLGUI(ctk.CTk):
                 "SpotDL is not installed or not in PATH.\n\n"
                 "Install it with: pip install spotdl"
             )
+
+    def is_playlist(self, url_or_query):
+        """Detect if the URL/query is a playlist"""
+        url_lower = url_or_query.lower()
+
+        # Spotify playlists
+        if "spotify.com/playlist" in url_lower:
+            return True
+
+        # YouTube playlists
+        if "youtube.com/playlist" in url_lower or "list=" in url_lower:
+            return True
+
+        # Special Spotify queries that are playlists
+        playlist_queries = [
+            "all-user-playlists",
+            "all-saved-playlists"
+        ]
+        if url_or_query.strip() in playlist_queries:
+            return True
+
+        return False
+
+    def is_album(self, url_or_query):
+        """Detect if the URL/query is an album"""
+        url_lower = url_or_query.lower()
+
+        # Spotify albums
+        if "spotify.com/album" in url_lower:
+            return True
+
+        # Special Spotify query for saved albums
+        if url_or_query.strip() == "all-user-saved-albums":
+            return True
+
+        return False
+
+    def get_content_type(self, url_or_query):
+        """Determine the content type (playlist, album, track, etc.)"""
+        if self.is_playlist(url_or_query):
+            return "playlist"
+        elif self.is_album(url_or_query):
+            return "album"
+        elif "spotify.com/track" in url_or_query.lower():
+            return "track"
+        elif "spotify.com/artist" in url_or_query.lower():
+            return "artist"
+        elif "all-user-followed-artists" in url_or_query:
+            return "artists"
+        elif url_or_query.strip() == "saved":
+            return "liked_songs"
+        elif "youtube.com/watch" in url_or_query.lower() or "youtu.be" in url_or_query.lower():
+            return "video"
+        else:
+            return "unknown"
 
     def toggle_theme(self):
         """Toggle between light and dark theme"""
@@ -217,9 +274,24 @@ class SpotDLGUI(ctk.CTk):
         )
         self.url_entry.grid(row=2, column=0, sticky="ew", pady=(0, 10))
 
+        # Playlist name input (optional)
+        playlist_name_label = ctk.CTkLabel(
+            frame,
+            text="Playlist Folder Name (optional - leave blank for auto):",
+            font=ctk.CTkFont(size=11)
+        )
+        playlist_name_label.grid(row=3, column=0, sticky="w", pady=(5, 5))
+
+        self.playlist_name_entry = ctk.CTkEntry(
+            frame,
+            placeholder_text="e.g., 'My Favorite Songs' or leave blank for auto-detect",
+            height=35
+        )
+        self.playlist_name_entry.grid(row=4, column=0, sticky="ew", pady=(0, 10))
+
         # Quick buttons
         quick_frame = ctk.CTkFrame(frame, fg_color="transparent")
-        quick_frame.grid(row=3, column=0, sticky="ew", pady=(0, 20))
+        quick_frame.grid(row=5, column=0, sticky="ew", pady=(0, 20))
 
         quick_label = ctk.CTkLabel(quick_frame, text="Quick select:")
         quick_label.grid(row=0, column=0, padx=(0, 10))
@@ -242,7 +314,7 @@ class SpotDLGUI(ctk.CTk):
 
         # Options
         options_frame = ctk.CTkFrame(frame)
-        options_frame.grid(row=4, column=0, sticky="ew", pady=(0, 20))
+        options_frame.grid(row=6, column=0, sticky="ew", pady=(0, 20))
         options_frame.grid_columnconfigure((0, 1), weight=1)
 
         # Format
@@ -271,7 +343,7 @@ class SpotDLGUI(ctk.CTk):
 
         # Advanced options
         advanced_frame = ctk.CTkFrame(frame)
-        advanced_frame.grid(row=5, column=0, sticky="ew", pady=(0, 20))
+        advanced_frame.grid(row=7, column=0, sticky="ew", pady=(0, 20))
         advanced_frame.grid_columnconfigure((0, 1, 2), weight=1)
 
         adv_label = ctk.CTkLabel(
@@ -329,11 +401,21 @@ class SpotDLGUI(ctk.CTk):
             text="Folder per URL",
             variable=self.folder_per_url_var
         )
-        folder_per_url_check.grid(row=2, column=2, sticky="w", padx=10, pady=(5, 10))
+        folder_per_url_check.grid(row=2, column=2, sticky="w", padx=10, pady=5)
+
+        self.organize_playlists_var = ctk.BooleanVar(
+            value=self.settings.get("organize_playlists", True)
+        )
+        organize_playlists_check = ctk.CTkCheckBox(
+            advanced_frame,
+            text="Organize Playlists",
+            variable=self.organize_playlists_var
+        )
+        organize_playlists_check.grid(row=3, column=0, sticky="w", padx=10, pady=(5, 10))
 
         # Buttons frame
         buttons_frame = ctk.CTkFrame(frame, fg_color="transparent")
-        buttons_frame.grid(row=6, column=0, sticky="ew")
+        buttons_frame.grid(row=8, column=0, sticky="ew")
         buttons_frame.grid_columnconfigure(0, weight=3)
         buttons_frame.grid_columnconfigure(1, weight=1)
 
@@ -622,24 +704,57 @@ class SpotDLGUI(ctk.CTk):
         # Determine download folder
         download_folder = self.folder_entry.get()
 
-        # If "folder per URL" is enabled, create a subfolder
-        if self.folder_per_url_var.get():
+        # Check if this is a playlist
+        is_playlist_url = self.is_playlist(query)
+
+        # Handle playlist organization
+        if is_playlist_url and self.organize_playlists_var.get():
+            # Get custom playlist name or auto-generate
+            custom_name = self.playlist_name_entry.get().strip()
+
+            if custom_name:
+                # Use custom name
+                playlist_folder = self.sanitize_folder_name(custom_name)
+            else:
+                # Auto-generate from URL
+                playlist_folder = self.sanitize_folder_name(query)
+
+            # Create Playlists/{playlist-name} structure
+            download_folder = os.path.join(download_folder, "Playlists", playlist_folder)
+            os.makedirs(download_folder, exist_ok=True)
+
+        # If "folder per URL" is enabled (for non-playlists or when playlist organization is off)
+        elif self.folder_per_url_var.get():
             # Create folder name from URL/query
             folder_name = self.sanitize_folder_name(query)
             download_folder = os.path.join(download_folder, folder_name)
             os.makedirs(download_folder, exist_ok=True)
 
-        # Log start
+        # Log start with content type
         timestamp = datetime.now().strftime("%H:%M:%S")
+        content_type = self.get_content_type(query)
+        type_icons = {
+            "playlist": "📃",
+            "album": "💿",
+            "track": "🎵",
+            "artist": "🎤",
+            "artists": "🎤",
+            "liked_songs": "❤️",
+            "video": "📹",
+            "unknown": "📥"
+        }
+        icon = type_icons.get(content_type, "📥")
+
         self.log_to_queue(f"\n{'='*60}\n")
-        self.log_to_queue(f"[{timestamp}] 📥 Starting download\n")
+        self.log_to_queue(f"[{timestamp}] {icon} Starting download ({content_type})\n")
         self.log_to_queue(f"Query: {query}\n")
         self.log_to_queue(f"Folder: {download_folder}\n")
         self.log_to_queue(f"Command: {' '.join(cmd)}\n")
         self.log_to_queue(f"{'='*60}\n\n")
 
-        # Clear input
+        # Clear inputs
         self.url_entry.delete(0, "end")
+        self.playlist_name_entry.delete(0, "end")
 
         # Switch to queue tab
         self.show_frame("queue")
@@ -653,13 +768,40 @@ class SpotDLGUI(ctk.CTk):
 
     def sanitize_folder_name(self, url_or_query):
         """Create a safe folder name from URL or query"""
+        # Handle special Spotify queries
+        special_queries = {
+            "saved": "Liked Songs",
+            "all-user-playlists": "All My Playlists",
+            "all-saved-playlists": "My Saved Playlists",
+            "all-user-followed-artists": "Followed Artists",
+            "all-user-saved-albums": "Saved Albums"
+        }
+
+        if url_or_query in special_queries:
+            return special_queries[url_or_query]
+
         # Extract meaningful part from URL
-        if "spotify.com" in url_or_query:
+        if "spotify.com/playlist" in url_or_query:
+            # For Spotify playlists, use the playlist ID
             parts = url_or_query.split("/")
             if len(parts) >= 2:
-                return f"spotify_{parts[-2]}_{parts[-1][:8]}"
+                playlist_id = parts[-1].split("?")[0][:12]  # Get ID, remove query params
+                return f"Spotify_Playlist_{playlist_id}"
+
+        elif "spotify.com" in url_or_query:
+            # For other Spotify URLs
+            parts = url_or_query.split("/")
+            if len(parts) >= 2:
+                return f"Spotify_{parts[-2]}_{parts[-1][:8]}"
+
+        elif "youtube.com/playlist" in url_or_query:
+            # YouTube playlist
+            list_id = url_or_query.split("list=")[-1].split("&")[0][:12]
+            return f"YouTube_Playlist_{list_id}"
+
         elif "youtube.com" in url_or_query or "youtu.be" in url_or_query:
-            return f"youtube_{url_or_query.split('=')[-1][:8]}"
+            # YouTube video
+            return f"YouTube_{url_or_query.split('=')[-1][:8]}"
 
         # For other queries, just sanitize
         safe_name = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in url_or_query)

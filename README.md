@@ -11,9 +11,11 @@ A beautiful, modern desktop application for SpotDL - no browser needed!
 - 🎨 **Modern, Clean Interface** - Dark/Light theme support
 - 🚀 **Simple Setup** - Just run one Python file
 - 🎵 **All SpotDL Features** - Full access to all CLI options
-- 📊 **Real-time Queue** - Track your downloads
+- 📃 **Smart Playlist Organization** - Auto-organize playlists in dedicated folders
+- 📊 **Real-time Queue** - Track your downloads with live SpotDL output
 - ⚙️ **Customizable** - Format, bitrate, output templates, and more
 - 💻 **Cross-Platform** - Works on Windows, Mac, and Linux
+- 📁 **One-Click Folder Access** - Open downloads instantly
 
 ## 🚀 Quick Start
 
@@ -125,6 +127,15 @@ Create synced lyrics files (.lrc) for music players
 ### Playlist Numbering
 Add playlist position to track metadata
 
+### Organize Playlists
+Automatically organize playlists into `Playlists/{playlist-name}` folders:
+- **Custom naming**: Enter a custom name in the "Playlist Folder Name" field
+- **Auto-naming**: Leave blank to use auto-generated names (e.g., "Liked Songs", "Spotify_Playlist_xxxxx")
+- **Smart detection**: Automatically detects Spotify and YouTube playlists
+
+### Folder per URL
+Create a separate folder for each URL you download (useful for organizing albums and tracks)
+
 ## 📁 Where Are My Downloads?
 
 By default, downloads go to your **Music folder**:
@@ -133,6 +144,31 @@ By default, downloads go to your **Music folder**:
 - **Linux**: `~/Music`
 
 You can change this in **Settings → Download Folder**
+
+### Folder Structure Examples
+
+With **Organize Playlists** enabled, your library might look like:
+
+```
+Music/
+├── Playlists/
+│   ├── Liked Songs/
+│   │   ├── Artist/2024 - Album/01 - Song.mp3
+│   │   └── Artist/2024 - Album/02 - Song.mp3
+│   ├── My Workout Mix/
+│   │   └── ...
+│   └── Spotify_Playlist_37i9dQZ/
+│       └── ...
+├── Artist Name/
+│   └── 2024 - Album Name/
+│       ├── 01 - Song Title.mp3
+│       └── 02 - Song Title.mp3
+└── Another Artist/
+    └── 2023 - Another Album/
+        └── ...
+```
+
+**Single tracks and albums** go directly to the main download folder using your output template, while **playlists** are organized in their own subfolder.
 
 ## 🐛 Troubleshooting
 
@@ -173,9 +209,12 @@ Choose what works best for you!
 ## 📝 Tips
 
 1. **Batch Downloads** - Paste playlist URLs to download multiple songs
-2. **Custom Templates** - Organize your library with folder structures
-3. **Quality Settings** - Use FLAC for lossless, MP3 320k for high quality
-4. **Spotify Login** - Configure in SpotDL config for your library access
+2. **Organize Playlists** - Enable "Organize Playlists" to keep playlists in dedicated folders
+3. **Custom Playlist Names** - Name your playlists before downloading for easy organization
+4. **Custom Templates** - Organize your library with folder structures
+5. **Quality Settings** - Use FLAC for lossless, MP3 320k for high quality
+6. **Spotify Login** - Configure in SpotDL config for your library access
+7. **One-Click Access** - Use the 📁 Open Folder button to instantly view your downloads
 
 ## 🚀 Next Steps
 

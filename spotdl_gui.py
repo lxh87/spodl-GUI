@@ -786,26 +786,28 @@ class SpotDLGUI(ctk.CTk):
         template_tags_label.grid(row=4, column=0, padx=10, pady=(5, 2), sticky="w")
 
         template_tags_frame = ctk.CTkFrame(template_frame, fg_color="transparent")
-        template_tags_frame.grid(row=5, column=0, padx=10, pady=(0, 10), sticky="w")
+        template_tags_frame.grid(row=5, column=0, padx=10, pady=(0, 10), sticky="ew")
 
-        song_tags = [
-            "{title}", "{artist}", "{artists}", "{album}",
-            "{album-artist}", "{year}", "{track-number}", "{disc-number}",
-            "{genre}", "{isrc}", "{publisher}", "{output-ext}"
-        ]
+        # Sort tags alphabetically
+        song_tags = sorted([
+            "{album}", "{album-artist}", "{artist}", "{artists}",
+            "{disc-number}", "{genre}", "{isrc}", "{output-ext}",
+            "{publisher}", "{title}", "{track-number}", "{year}"
+        ])
 
+        # Use 6 columns to spread horizontally
         for i, tag in enumerate(song_tags):
             tag_btn = ctk.CTkButton(
                 template_tags_frame,
                 text=tag,
-                width=90,
+                width=100,
                 height=24,
                 font=ctk.CTkFont(size=9),
                 fg_color="gray30",
                 hover_color="gray20",
                 command=lambda t=tag: self.insert_tag_template(t)
             )
-            tag_btn.grid(row=i//4, column=i%4, padx=2, pady=2)
+            tag_btn.grid(row=i//6, column=i%6, padx=2, pady=2)
 
         # Playlist template
         playlist_template_frame = ctk.CTkFrame(frame)
@@ -858,14 +860,16 @@ class SpotDLGUI(ctk.CTk):
         playlist_tags_label.grid(row=4, column=0, padx=10, pady=(5, 2), sticky="w")
 
         playlist_tags_frame = ctk.CTkFrame(playlist_template_frame, fg_color="transparent")
-        playlist_tags_frame.grid(row=5, column=0, padx=10, pady=(0, 10), sticky="w")
+        playlist_tags_frame.grid(row=5, column=0, padx=10, pady=(0, 10), sticky="ew")
 
-        playlist_tags = [
-            "{list-name}", "{list-position}", "{list-length}",
-            "{title}", "{artists}", "{artist}", "{album}",
-            "{year}", "{genre}", "{output-ext}"
-        ]
+        # Sort tags alphabetically
+        playlist_tags = sorted([
+            "{album}", "{artist}", "{artists}", "{genre}",
+            "{list-length}", "{list-name}", "{list-position}",
+            "{output-ext}", "{title}", "{year}"
+        ])
 
+        # Use 6 columns to spread horizontally
         for i, tag in enumerate(playlist_tags):
             tag_btn = ctk.CTkButton(
                 playlist_tags_frame,
@@ -877,7 +881,7 @@ class SpotDLGUI(ctk.CTk):
                 hover_color="gray20",
                 command=lambda t=tag: self.insert_tag_playlist_template(t)
             )
-            tag_btn.grid(row=i//4, column=i%4, padx=2, pady=2)
+            tag_btn.grid(row=i//6, column=i%6, padx=2, pady=2)
 
         # Threads
         threads_frame = ctk.CTkFrame(frame)

@@ -13,13 +13,21 @@ from pathlib import Path
 from tkinter import filedialog, messagebox
 import sys
 from datetime import datetime
-
-# Import our enhanced metadata handler
-from metadata_handler import SpotifyMetadataHandler
+import time
 
 # Set appearance
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("green")
+
+# Lazy import metadata handler - only when needed
+_metadata_handler = None
+
+def get_metadata_handler():
+    global _metadata_handler
+    if _metadata_handler is None:
+        from metadata_handler import SpotifyMetadataHandler
+        _metadata_handler = SpotifyMetadataHandler()
+    return _metadata_handler
 
 
 class SpotDLGUI(ctk.CTk):
@@ -29,12 +37,9 @@ class SpotDLGUI(ctk.CTk):
         # Config file location
         self.config_file = Path.home() / ".spotdl_gui_config.json"
 
-        # Initialize metadata handler (works with pip, source, or spotdl.exe)
-        self.metadata_handler = SpotifyMetadataHandler()
-
         # Window setup
         self.title("SpotDL GUI")
-        self.geometry("1100x850")
+        self.geometry("1100x1200")
 
         # Configure grid
         self.grid_columnconfigure(1, weight=1)
@@ -100,11 +105,11 @@ class SpotDLGUI(ctk.CTk):
         # Initialize command preview
         self.update_command_preview()
 
-        # Check SpotDL
-        self.check_spotdl()
-
         # Save settings on close
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+        # Defer non-critical startup tasks
+        self.after(100, self.check_spotdl)
 
     def load_settings(self):
         """Load settings from config file"""
@@ -1262,8 +1267,8 @@ class SpotDLGUI(ctk.CTk):
                          or None if fetching fails
         """
         try:
-            # Use the enhanced metadata handler
-            metadata = self.metadata_handler.get_metadata(url_or_query)
+            # Use the enhanced metadata handler (lazy loaded)
+            metadata = get_metadata_handler().get_metadata(url_or_query)
 
             if metadata:
                 # Ensure 'album-artist' key exists (with dash) for template compatibility
@@ -1295,8 +1300,8 @@ class SpotDLGUI(ctk.CTk):
         if not template or not metadata:
             return None
 
-        # Use the metadata handler's format_template method
-        return self.metadata_handler.format_template(template, metadata)
+        # Use the metadata handler's format_template method (lazy loaded)
+        return get_metadata_handler().format_template(template, metadata)
 
     def sanitize_folder_name(self, url_or_query):
         """Create a safe folder name from URL or query using enhanced sanitizer"""
@@ -1338,8 +1343,8 @@ class SpotDLGUI(ctk.CTk):
             # YouTube video
             return f"YouTube_{url_or_query.split('=')[-1][:8]}"
 
-        # For other queries, use the enhanced sanitizer
-        return self.metadata_handler.sanitize_folder_name(url_or_query, max_length=100)
+        # For other queries, use the enhanced sanitizer (lazy loaded)
+        return get_metadata_handler().sanitize_folder_name(url_or_query, max_length=100)
 
     def run_download(self, cmd, download_folder, query):
         """Run spotdl command in background with real-time output"""

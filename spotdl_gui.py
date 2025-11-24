@@ -14,6 +14,9 @@ from tkinter import filedialog, messagebox
 import sys
 from datetime import datetime
 
+# Import our enhanced metadata handler
+from metadata_handler import SpotifyMetadataHandler
+
 # Set appearance
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("green")
@@ -26,9 +29,12 @@ class SpotDLGUI(ctk.CTk):
         # Config file location
         self.config_file = Path.home() / ".spotdl_gui_config.json"
 
+        # Initialize metadata handler (works with pip, source, or spotdl.exe)
+        self.metadata_handler = SpotifyMetadataHandler()
+
         # Window setup
         self.title("SpotDL GUI")
-        self.geometry("1100x750")
+        self.geometry("1100x850")
 
         # Configure grid
         self.grid_columnconfigure(1, weight=1)
@@ -69,20 +75,6 @@ class SpotDLGUI(ctk.CTk):
         )
         self.btn_settings.grid(row=3, column=0, padx=20, pady=10)
 
-        # Theme switch
-        self.theme_label = ctk.CTkLabel(self.sidebar, text="Theme:")
-        self.theme_label.grid(row=7, column=0, padx=20, pady=(10, 0))
-
-        self.theme_switch = ctk.CTkSwitch(
-            self.sidebar,
-            text="Dark Mode",
-            command=self.toggle_theme,
-            onvalue="dark",
-            offvalue="light"
-        )
-        self.theme_switch.grid(row=8, column=0, padx=20, pady=(0, 20))
-        self.theme_switch.select()
-
         # Main content area
         self.main_frame = ctk.CTkFrame(self, corner_radius=0)
         self.main_frame.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
@@ -92,18 +84,19 @@ class SpotDLGUI(ctk.CTk):
         # Load settings first
         self.load_settings()
 
-        # Initialize frames
+        # Initialize frames dictionary (lazy loading - frames created on-demand)
         self.frames = {}
-        self.create_download_frame()
-        self.create_queue_frame()
-        self.create_settings_frame()
+        self.frames_created = set()  # Track which frames have been created
 
         # Download queue
         self.download_queue = []
         self.current_process = None
 
-        # Show download frame by default
+        # Show download frame by default (will create it lazily)
         self.show_frame("download")
+
+        # Initialize command preview
+        self.update_command_preview()
 
         # Check SpotDL
         self.check_spotdl()
@@ -116,6 +109,7 @@ class SpotDLGUI(ctk.CTk):
         default_settings = {
             "format": "mp3",
             "bitrate": "320k",
+            "playlist_output": "{list-name}/{list-position} - {artists} - {title}.{output-ext}",
             "threads": "4",
             "output": "{album-artist}/{year} - {album}/{track-number} - {title}.{output-ext}",
             "audio_providers": ["youtube-music", "youtube"],
@@ -143,15 +137,18 @@ class SpotDLGUI(ctk.CTk):
             self.settings["bitrate"] = self.bitrate_var.get()
             self.settings["threads"] = self.threads_var.get()
             self.settings["output"] = self.template_entry.get()
+            self.settings["playlist_output"] = self.playlist_template_entry.get()
             self.settings["download_folder"] = self.folder_entry.get()
             self.settings["theme"] = "dark" if self.theme_switch.get() == "dark" else "light"
             self.settings["create_folder_per_url"] = self.folder_per_url_var.get()
-            self.settings["playlist_folder_name"] = self.playlist_folder_entry.get()
 
             with open(self.config_file, 'w') as f:
                 json.dump(self.settings, f, indent=2)
 
             self.log_to_queue(f"✅ Settings saved to {self.config_file}\n")
+
+            # Update command preview with new settings
+            self.update_command_preview()
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save settings: {str(e)}")
 
@@ -349,25 +346,39 @@ class SpotDLGUI(ctk.CTk):
         example = self.generate_example_output(template)
         self.example_output_label.configure(text=f"Preview: {example}")
 
-    def update_folder_example(self, *args):
-        """Update the folder name preview"""
-        template = self.playlist_folder_entry.get()
-        if template:
-            example = self.generate_example_output(template)
-            self.folder_example_label.configure(text=f"Preview: {example}")
-        else:
-            self.folder_example_label.configure(text="Preview: (Auto-detect from Spotify)")
+    def generate_playlist_example_output(self, template):
+        """Generate example output for playlist template using consistent example data"""
+        # Consistent playlist example data
+        example_data = {
+            "list-name": "My Awesome Playlist",
+            "list-position": "05",
+            "list-length": "50",
+            "title": "Blinding Lights",
+            "artist": "The Weeknd",
+            "artists": "The Weeknd",
+            "album": "After Hours",
+            "album-artist": "The Weeknd",
+            "genre": "Synth-pop",
+            "year": "2020",
+            "track-number": "03",
+            "disc-number": "1",
+            "output-ext": "mp3"
+        }
 
-    def insert_tag_folder(self, tag):
-        """Insert tag at cursor position in folder name entry"""
-        import tkinter as tk
-        current_pos = self.playlist_folder_entry.index(tk.INSERT)
-        current_text = self.playlist_folder_entry.get()
-        new_text = current_text[:current_pos] + tag + current_text[current_pos:]
-        self.playlist_folder_entry.delete(0, tk.END)
-        self.playlist_folder_entry.insert(0, new_text)
-        self.playlist_folder_entry.icursor(current_pos + len(tag))
-        self.update_folder_example()
+        try:
+            # Replace all variables with example data
+            result = template
+            for key, value in example_data.items():
+                result = result.replace(f"{{{key}}}", value)
+            return result
+        except:
+            return template
+
+    def update_playlist_template_example(self, *args):
+        """Update the playlist template example output when template changes"""
+        template = self.playlist_template_entry.get()
+        example = self.generate_playlist_example_output(template)
+        self.playlist_example_output_label.configure(text=f"Preview: {example}")
 
     def insert_tag_template(self, tag):
         """Insert tag at cursor position in template entry"""
@@ -380,6 +391,17 @@ class SpotDLGUI(ctk.CTk):
         self.template_entry.icursor(current_pos + len(tag))
         self.update_template_example()
 
+    def insert_tag_playlist_template(self, tag):
+        """Insert tag at cursor position in playlist template entry"""
+        import tkinter as tk
+        current_pos = self.playlist_template_entry.index(tk.INSERT)
+        current_text = self.playlist_template_entry.get()
+        new_text = current_text[:current_pos] + tag + current_text[current_pos:]
+        self.playlist_template_entry.delete(0, tk.END)
+        self.playlist_template_entry.insert(0, new_text)
+        self.playlist_template_entry.icursor(current_pos + len(tag))
+        self.update_playlist_template_example()
+
     def toggle_theme(self):
         """Toggle between light and dark theme"""
         if self.theme_switch.get() == "dark":
@@ -388,7 +410,18 @@ class SpotDLGUI(ctk.CTk):
             ctk.set_appearance_mode("light")
 
     def show_frame(self, frame_name):
-        """Show the specified frame"""
+        """Show the specified frame (lazy loading)"""
+        # Create frame if it hasn't been created yet
+        if frame_name not in self.frames_created:
+            if frame_name == "download":
+                self.create_download_frame()
+            elif frame_name == "queue":
+                self.create_queue_frame()
+            elif frame_name == "settings":
+                self.create_settings_frame()
+            self.frames_created.add(frame_name)
+
+        # Show requested frame, hide others
         for name, frame in self.frames.items():
             if name == frame_name:
                 frame.grid(row=0, column=0, sticky="nsew")
@@ -413,12 +446,28 @@ class SpotDLGUI(ctk.CTk):
         url_label = ctk.CTkLabel(frame, text="Spotify/YouTube URL or Query:")
         url_label.grid(row=1, column=0, sticky="w", pady=(0, 5))
 
+        # URL input frame with paste button
+        url_input_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        url_input_frame.grid(row=2, column=0, sticky="ew", pady=(0, 10))
+        url_input_frame.grid_columnconfigure(0, weight=1)
+
         self.url_entry = ctk.CTkEntry(
-            frame,
+            url_input_frame,
             placeholder_text="https://open.spotify.com/track/...",
             height=40
         )
-        self.url_entry.grid(row=2, column=0, sticky="ew", pady=(0, 10))
+        self.url_entry.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+
+        # Paste button
+        paste_btn = ctk.CTkButton(
+            url_input_frame,
+            text="📋",
+            width=40,
+            height=40,
+            command=self.paste_url,
+            font=ctk.CTkFont(size=16)
+        )
+        paste_btn.grid(row=0, column=1)
 
         # Quick buttons
         quick_frame = ctk.CTkFrame(frame, fg_color="transparent")
@@ -536,7 +585,7 @@ class SpotDLGUI(ctk.CTk):
 
         # Buttons frame
         buttons_frame = ctk.CTkFrame(frame, fg_color="transparent")
-        buttons_frame.grid(row=8, column=0, sticky="ew")
+        buttons_frame.grid(row=8, column=0, sticky="ew", pady=(0, 15))
         buttons_frame.grid_columnconfigure(0, weight=3)
         buttons_frame.grid_columnconfigure(1, weight=1)
 
@@ -561,6 +610,52 @@ class SpotDLGUI(ctk.CTk):
             hover_color="gray30"
         )
         self.open_folder_btn.grid(row=0, column=1, sticky="ew", padx=(5, 0))
+
+        # Command preview section
+        command_preview_label = ctk.CTkLabel(
+            frame,
+            text="Command Preview:",
+            font=ctk.CTkFont(size=11, weight="bold")
+        )
+        command_preview_label.grid(row=9, column=0, sticky="w", pady=(0, 5))
+
+        # Command preview frame with copy button
+        command_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        command_frame.grid(row=10, column=0, sticky="ew")
+        command_frame.grid_columnconfigure(0, weight=1)
+
+        self.command_entry = ctk.CTkEntry(
+            command_frame,
+            placeholder_text="Command will appear here...",
+            height=35,
+            state="readonly",
+            font=ctk.CTkFont(family="Consolas", size=10)
+        )
+        self.command_entry.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+
+        # Copy button
+        copy_btn = ctk.CTkButton(
+            command_frame,
+            text="📄",
+            width=35,
+            height=35,
+            command=self.copy_command,
+            font=ctk.CTkFont(size=14)
+        )
+        copy_btn.grid(row=0, column=1)
+
+        # Update command preview when URL changes
+        self.url_entry.bind("<KeyRelease>", lambda e: self.update_command_preview())
+
+        # Bind download frame variables
+        self.format_var.trace_add("write", lambda *args: self.update_command_preview())
+        self.bitrate_var.trace_add("write", lambda *args: self.update_command_preview())
+        self.preload_var.trace_add("write", lambda *args: self.update_command_preview())
+        self.sponsor_block_var.trace_add("write", lambda *args: self.update_command_preview())
+        self.skip_explicit_var.trace_add("write", lambda *args: self.update_command_preview())
+        self.generate_lrc_var.trace_add("write", lambda *args: self.update_command_preview())
+        self.playlist_numbering_var.trace_add("write", lambda *args: self.update_command_preview())
+        self.folder_per_url_var.trace_add("write", lambda *args: self.update_command_preview())
 
     def create_queue_frame(self):
         """Create the queue tab"""
@@ -600,7 +695,7 @@ class SpotDLGUI(ctk.CTk):
 
     def create_settings_frame(self):
         """Create the settings tab"""
-        frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        frame = ctk.CTkScrollableFrame(self.main_frame, fg_color="transparent")
         frame.grid_columnconfigure(0, weight=1)
         self.frames["settings"] = frame
 
@@ -649,79 +744,9 @@ class SpotDLGUI(ctk.CTk):
         )
         open_folder_btn.grid(row=1, column=3, padx=(0, 10), pady=5)
 
-        # Playlist folder name
-        playlist_folder_frame = ctk.CTkFrame(frame)
-        playlist_folder_frame.grid(row=2, column=0, sticky="ew", pady=(0, 20))
-        playlist_folder_frame.grid_columnconfigure(0, weight=1)
-
-        playlist_folder_label = ctk.CTkLabel(
-            playlist_folder_frame,
-            text="Custom Folder Name (for albums/playlists):",
-            font=ctk.CTkFont(weight="bold")
-        )
-        playlist_folder_label.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
-
-        playlist_folder_label2 = ctk.CTkLabel(
-            playlist_folder_frame,
-            text="Use template variables like {artist} - {year}, or leave blank to auto-fetch from Spotify",
-            font=ctk.CTkFont(size=10),
-            text_color="gray"
-        )
-        playlist_folder_label2.grid(row=1, column=0, padx=10, pady=(0, 5), sticky="w")
-
-        self.playlist_folder_entry = ctk.CTkEntry(
-            playlist_folder_frame,
-            placeholder_text="e.g., '{artist} - {year}' or leave blank for auto-detect"
-        )
-        self.playlist_folder_entry.insert(0, self.settings.get("playlist_folder_name", ""))
-        self.playlist_folder_entry.grid(row=2, column=0, padx=10, pady=(0, 5), sticky="ew")
-
-        # Bind to update preview
-        self.playlist_folder_entry.bind("<KeyRelease>", self.update_folder_example)
-
-        # Folder name preview
-        initial_folder_example = self.generate_example_output(self.playlist_folder_entry.get()) if self.playlist_folder_entry.get() else "(Auto-detect from Spotify)"
-        self.folder_example_label = ctk.CTkLabel(
-            playlist_folder_frame,
-            text=f"Preview: {initial_folder_example}",
-            text_color="#4CAF50",
-            font=ctk.CTkFont(size=10)
-        )
-        self.folder_example_label.grid(row=3, column=0, padx=20, pady=(0, 5), sticky="w")
-
-        # Clickable tags for folder name
-        tags_label = ctk.CTkLabel(
-            playlist_folder_frame,
-            text="Click to insert:",
-            font=ctk.CTkFont(size=9),
-            text_color="gray"
-        )
-        tags_label.grid(row=4, column=0, padx=10, pady=(5, 2), sticky="w")
-
-        folder_tags_frame = ctk.CTkFrame(playlist_folder_frame, fg_color="transparent")
-        folder_tags_frame.grid(row=5, column=0, padx=10, pady=(0, 10), sticky="w")
-
-        folder_tags = [
-            "{artist}", "{artists}", "{album-artist}", "{album}",
-            "{year}", "{genre}"
-        ]
-
-        for i, tag in enumerate(folder_tags):
-            tag_btn = ctk.CTkButton(
-                folder_tags_frame,
-                text=tag,
-                width=80,
-                height=24,
-                font=ctk.CTkFont(size=9),
-                fg_color="gray30",
-                hover_color="gray20",
-                command=lambda t=tag: self.insert_tag_folder(t)
-            )
-            tag_btn.grid(row=i//4, column=i%4, padx=2, pady=2)
-
-        # Output template
+        # Output template (Song File Template)
         template_frame = ctk.CTkFrame(frame)
-        template_frame.grid(row=3, column=0, sticky="ew", pady=(0, 20))
+        template_frame.grid(row=2, column=0, sticky="ew", pady=(0, 20))
         template_frame.grid_columnconfigure(0, weight=1)
 
         template_label = ctk.CTkLabel(
@@ -744,7 +769,11 @@ class SpotDLGUI(ctk.CTk):
         self.template_entry.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 5))
 
         # Bind the entry to update preview in real-time
-        self.template_entry.bind("<KeyRelease>", self.update_template_example)
+        def update_both_previews(event):
+            self.update_template_example(event)
+            self.update_command_preview()
+
+        self.template_entry.bind("<KeyRelease>", update_both_previews)
 
         # Dynamic example output label
         initial_example = self.generate_example_output(self.template_entry.get())
@@ -787,6 +816,78 @@ class SpotDLGUI(ctk.CTk):
             )
             tag_btn.grid(row=i//4, column=i%4, padx=2, pady=2)
 
+        # Playlist template
+        playlist_template_frame = ctk.CTkFrame(frame)
+        playlist_template_frame.grid(row=3, column=0, sticky="ew", pady=(0, 20))
+        playlist_template_frame.grid_columnconfigure(0, weight=1)
+
+        playlist_template_label = ctk.CTkLabel(
+            playlist_template_frame,
+            text="Playlist Template (for playlists only):",
+            font=ctk.CTkFont(weight="bold")
+        )
+        playlist_template_label.grid(row=0, column=0, sticky="w", padx=10, pady=(10, 5))
+
+        playlist_template_help = ctk.CTkLabel(
+            playlist_template_frame,
+            text="Used automatically when downloading playlists. Use {list-name}, {list-position} for playlist-specific variables.",
+            font=ctk.CTkFont(size=10),
+            text_color="gray"
+        )
+        playlist_template_help.grid(row=1, column=0, sticky="w", padx=10, pady=(0, 5))
+
+        self.playlist_template_entry = ctk.CTkEntry(playlist_template_frame)
+        self.playlist_template_entry.insert(0, self.settings.get("playlist_output", "{list-name}/{list-position} - {artists} - {title}.{output-ext}"))
+        self.playlist_template_entry.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 5))
+
+        # Bind the entry to update preview in real-time
+        def update_playlist_previews(event):
+            self.update_playlist_template_example(event)
+            self.update_command_preview()
+
+        self.playlist_template_entry.bind("<KeyRelease>", update_playlist_previews)
+
+        # Dynamic example output label for playlist
+        initial_playlist_example = self.generate_playlist_example_output(self.playlist_template_entry.get())
+        self.playlist_example_output_label = ctk.CTkLabel(
+            playlist_template_frame,
+            text=f"Preview: {initial_playlist_example}",
+            text_color="#4CAF50",
+            font=ctk.CTkFont(size=10)
+        )
+        self.playlist_example_output_label.grid(row=3, column=0, sticky="w", padx=20, pady=(0, 5))
+
+        # Clickable tags for playlist template
+        playlist_tags_label = ctk.CTkLabel(
+            playlist_template_frame,
+            text="Click to insert:",
+            font=ctk.CTkFont(size=9),
+            text_color="gray"
+        )
+        playlist_tags_label.grid(row=4, column=0, padx=10, pady=(5, 2), sticky="w")
+
+        playlist_tags_frame = ctk.CTkFrame(playlist_template_frame, fg_color="transparent")
+        playlist_tags_frame.grid(row=5, column=0, padx=10, pady=(0, 10), sticky="w")
+
+        playlist_tags = [
+            "{list-name}", "{list-position}", "{list-length}",
+            "{title}", "{artists}", "{artist}", "{album}",
+            "{year}", "{genre}", "{output-ext}"
+        ]
+
+        for i, tag in enumerate(playlist_tags):
+            tag_btn = ctk.CTkButton(
+                playlist_tags_frame,
+                text=tag,
+                width=100,
+                height=24,
+                font=ctk.CTkFont(size=9),
+                fg_color="gray30",
+                hover_color="gray20",
+                command=lambda t=tag: self.insert_tag_playlist_template(t)
+            )
+            tag_btn.grid(row=i//4, column=i%4, padx=2, pady=2)
+
         # Threads
         threads_frame = ctk.CTkFrame(frame)
         threads_frame.grid(row=4, column=0, sticky="ew", pady=(0, 20))
@@ -808,6 +909,9 @@ class SpotDLGUI(ctk.CTk):
         threads_value = ctk.CTkLabel(threads_frame, textvariable=self.threads_var)
         threads_value.grid(row=0, column=2, padx=10, pady=10)
 
+        # Bind threads_var to update command preview
+        self.threads_var.trace_add("write", lambda *args: self.update_command_preview())
+
         # Save settings button
         save_btn = ctk.CTkButton(
             frame,
@@ -827,9 +931,36 @@ class SpotDLGUI(ctk.CTk):
         )
         config_label.grid(row=6, column=0, sticky="w")
 
+        # Theme settings
+        theme_frame = ctk.CTkFrame(frame)
+        theme_frame.grid(row=7, column=0, sticky="ew", pady=(20, 0))
+        theme_frame.grid_columnconfigure(0, weight=1)
+
+        theme_label = ctk.CTkLabel(
+            theme_frame,
+            text="Appearance:",
+            font=ctk.CTkFont(weight="bold")
+        )
+        theme_label.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
+
+        self.theme_switch = ctk.CTkSwitch(
+            theme_frame,
+            text="Dark Mode",
+            command=self.toggle_theme,
+            onvalue="dark",
+            offvalue="light"
+        )
+        self.theme_switch.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="w")
+
+        # Set initial state based on settings
+        if self.settings.get("theme", "dark") == "dark":
+            self.theme_switch.select()
+        else:
+            self.theme_switch.deselect()
+
         # SpotDL installation check
         spotdl_frame = ctk.CTkFrame(frame)
-        spotdl_frame.grid(row=7, column=0, sticky="ew", pady=(20, 0))
+        spotdl_frame.grid(row=8, column=0, sticky="ew", pady=(20, 0))
         spotdl_frame.grid_columnconfigure(0, weight=1)
 
         spotdl_label = ctk.CTkLabel(
@@ -904,6 +1035,90 @@ class SpotDLGUI(ctk.CTk):
         except Exception as e:
             messagebox.showerror("Error", f"Failed to open folder:\n{str(e)}")
 
+    def paste_url(self):
+        """Paste from clipboard into URL entry"""
+        try:
+            clipboard_text = self.clipboard_get()
+            self.url_entry.delete(0, "end")
+            self.url_entry.insert(0, clipboard_text)
+            self.update_command_preview()
+        except:
+            pass  # Clipboard empty or inaccessible
+
+    def copy_command(self):
+        """Copy command preview to clipboard"""
+        command = self.command_entry.get()
+        if command and command != "Command will appear here...":
+            try:
+                self.clipboard_clear()
+                self.clipboard_append(command)
+                # Visual feedback
+                self.command_entry.configure(state="normal")
+                temp_value = self.command_entry.get()
+                self.command_entry.delete(0, "end")
+                self.command_entry.insert(0, temp_value + " ✓")
+                self.command_entry.configure(state="readonly")
+
+                # Reset after 1 second
+                def reset():
+                    self.command_entry.configure(state="normal")
+                    self.command_entry.delete(0, "end")
+                    self.command_entry.insert(0, temp_value)
+                    self.command_entry.configure(state="readonly")
+
+                self.after(1000, reset)
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to copy to clipboard:\n{str(e)}")
+
+    def update_command_preview(self):
+        """Update the command preview field with current settings"""
+        query = self.url_entry.get().strip()
+
+        if not query:
+            self.command_entry.configure(state="normal")
+            self.command_entry.delete(0, "end")
+            self.command_entry.configure(placeholder_text="Command will appear here...")
+            self.command_entry.configure(state="readonly")
+            return
+
+        # Build command exactly as it will be executed
+        cmd_parts = ["spotdl", query]
+
+        # Add options
+        cmd_parts.extend(["--format", self.format_var.get()])
+        cmd_parts.extend(["--bitrate", self.bitrate_var.get()])
+        cmd_parts.extend(["--threads", self.threads_var.get()])
+
+        # Automatically select the correct template based on URL type
+        is_playlist_url = self.is_playlist(query)
+        if is_playlist_url:
+            template = self.settings.get("playlist_output", "{list-name}/{list-position} - {artists} - {title}.{output-ext}")
+        else:
+            template = self.settings.get("output", "{album-artist}/{year} - {album}/{track-number} - {title}.{output-ext}")
+
+        cmd_parts.extend(["--output", template])
+
+        # Add flags
+        if self.preload_var.get():
+            cmd_parts.append("--preload")
+        if self.sponsor_block_var.get():
+            cmd_parts.append("--sponsor-block")
+        if self.skip_explicit_var.get():
+            cmd_parts.append("--skip-explicit")
+        if self.generate_lrc_var.get():
+            cmd_parts.append("--generate-lrc")
+        if self.playlist_numbering_var.get():
+            cmd_parts.append("--playlist-numbering")
+
+        # Build command string
+        command = " ".join(cmd_parts)
+
+        # Update entry
+        self.command_entry.configure(state="normal")
+        self.command_entry.delete(0, "end")
+        self.command_entry.insert(0, command)
+        self.command_entry.configure(state="readonly")
+
     def log_to_queue(self, message):
         """Add a message to the queue display"""
         self.queue_textbox.configure(state="normal")
@@ -923,10 +1138,8 @@ class SpotDLGUI(ctk.CTk):
         format_val = self.format_var.get()
         bitrate_val = self.bitrate_var.get()
         threads_val = self.threads_var.get()
-        template_val = self.template_entry.get()
         download_folder = self.folder_entry.get()
         folder_per_url = self.folder_per_url_var.get()
-        playlist_folder_template = self.playlist_folder_entry.get().strip()
 
         # Get flags
         preload = self.preload_var.get()
@@ -939,6 +1152,15 @@ class SpotDLGUI(ctk.CTk):
         is_playlist_url = self.is_playlist(query)
         is_album_url = self.is_album(query)
         content_type = self.get_content_type(query)
+
+        # Automatically select the correct template based on URL type
+        if is_playlist_url:
+            template_val = self.playlist_template_entry.get()
+            self.log_to_queue(f"🎼 Using playlist template\n")
+        else:
+            template_val = self.template_entry.get()
+            if is_album_url:
+                self.log_to_queue(f"💿 Using album/track template\n")
 
         # Log initial message
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -968,7 +1190,7 @@ class SpotDLGUI(ctk.CTk):
         threading.Thread(
             target=self.prepare_and_download,
             args=(query, format_val, bitrate_val, threads_val, template_val,
-                  download_folder, folder_per_url, playlist_folder_template,
+                  download_folder, folder_per_url,
                   is_playlist_url, is_album_url,
                   preload, sponsor_block, skip_explicit, generate_lrc, playlist_numbering),
             daemon=True
@@ -976,7 +1198,7 @@ class SpotDLGUI(ctk.CTk):
 
     def prepare_and_download(self, query, format_val, bitrate_val, threads_val,
                             template_val, download_folder, folder_per_url,
-                            playlist_folder_template, is_playlist_url, is_album_url,
+                            is_playlist_url, is_album_url,
                             preload, sponsor_block, skip_explicit, generate_lrc,
                             playlist_numbering):
         """Prepare download folder (fetch metadata if needed) and start download - runs in background thread"""
@@ -993,20 +1215,8 @@ class SpotDLGUI(ctk.CTk):
 
                 if metadata:
                     self.log_to_queue(f"✅ Found {content_type_name}: {metadata.get('name', 'Unknown')}\n")
-
-                    # Check if user provided a custom template
-                    if playlist_folder_template:
-                        # Apply the template with metadata
-                        folder_name = self.apply_folder_template(playlist_folder_template, metadata)
-                        if folder_name:
-                            folder_name = self.sanitize_folder_name(folder_name)
-                            self.log_to_queue(f"📁 Using custom folder name: {folder_name}\n")
-                        else:
-                            # Template failed, use auto-detected name
-                            folder_name = self.sanitize_folder_name(metadata['name'])
-                    else:
-                        # No template, use the auto-detected name
-                        folder_name = self.sanitize_folder_name(metadata['name'])
+                    # Use the auto-detected name
+                    folder_name = self.sanitize_folder_name(metadata['name'])
                 else:
                     # Metadata fetch failed, fallback to URL-based naming
                     self.log_to_queue(f"⚠️ Could not fetch metadata, using URL-based name\n")
@@ -1047,100 +1257,54 @@ class SpotDLGUI(ctk.CTk):
         self.run_download(cmd, download_folder, query)
 
     def get_spotify_metadata(self, url_or_query):
-        """Get actual playlist/album metadata from Spotify using spotdl save
+        """Get comprehensive metadata from Spotify using enhanced metadata handler
 
         Returns:
-            dict or None: Metadata dictionary with fields like 'name', 'artist', 'album', 'year', etc.
+            dict or None: Metadata dictionary with rich fields including:
+                         'name', 'type', 'artist', 'artists', 'album', 'album-artist',
+                         'year', 'date', 'genre', 'genres', 'url', 'cover_url',
+                         'duration', 'explicit', 'popularity', 'track_count', etc.
                          or None if fetching fails
         """
         try:
-            import tempfile
+            # Use the enhanced metadata handler
+            metadata = self.metadata_handler.get_metadata(url_or_query)
 
-            # Create a temporary file for metadata
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.spotdl', delete=False) as temp_file:
-                temp_path = temp_file.name
+            if metadata:
+                # Ensure 'album-artist' key exists (with dash) for template compatibility
+                if 'album_artist' in metadata and 'album-artist' not in metadata:
+                    metadata['album-artist'] = metadata['album_artist']
 
-            # Run spotdl save to get metadata
-            result = subprocess.run(
-                ["spotdl", "save", url_or_query, "--save-file", temp_path],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
+                # Ensure year is a string for template formatting
+                if 'year' in metadata:
+                    metadata['year'] = str(metadata['year'])
 
-            if result.returncode == 0 and os.path.exists(temp_path):
-                # Read the .spotdl file (it's JSON)
-                with open(temp_path, 'r', encoding='utf-8') as f:
-                    metadata = json.load(f)
-
-                # Clean up temp file
-                try:
-                    os.unlink(temp_path)
-                except:
-                    pass
-
-                # Extract and structure the metadata
-                if isinstance(metadata, list) and len(metadata) > 0:
-                    first_item = metadata[0]
-
-                    # Build a standardized metadata dict
-                    meta_dict = {
-                        'name': None,
-                        'artist': first_item.get('artist', ''),
-                        'artists': first_item.get('artists', [''])[0] if isinstance(first_item.get('artists'), list) else first_item.get('artists', ''),
-                        'album': first_item.get('album', ''),
-                        'album-artist': first_item.get('album_artist', first_item.get('artist', '')),
-                        'year': str(first_item.get('year', first_item.get('release_date', ''))),
-                        'genre': first_item.get('genres', [''])[0] if isinstance(first_item.get('genres'), list) else first_item.get('genre', ''),
-                    }
-
-                    # Extract the display name (for auto-naming when template is empty)
-                    # Try to get list name (works for both playlists and albums)
-                    if 'list_name' in first_item and first_item['list_name']:
-                        meta_dict['name'] = first_item['list_name']
-                    # Try to get album_name (alternative field for albums)
-                    elif 'album_name' in first_item and first_item['album_name']:
-                        meta_dict['name'] = first_item['album_name']
-                    # Try to get album (legacy field)
-                    elif 'album' in first_item and first_item['album']:
-                        meta_dict['name'] = first_item['album']
-                    # Fallback to artist name
-                    elif 'artist' in first_item and first_item['artist']:
-                        meta_dict['name'] = first_item['artist']
-
-                    return meta_dict
-
-                return None
-            else:
-                # Failed to get metadata
-                return None
+            return metadata
 
         except Exception as e:
             # If metadata fetch fails, return None to fallback to URL-based naming
             return None
 
     def apply_folder_template(self, template, metadata):
-        """Apply metadata to folder name template
+        """Apply metadata to folder name template using enhanced formatter
 
         Args:
-            template: Template string like "{artist} - {year}"
+            template: Template string like "{artist} - {album} ({year})"
+                     Supports: {name}, {artist}, {artists}, {album}, {album-artist},
+                              {year}, {date}, {genre}, {type}
             metadata: Dictionary with metadata fields
 
         Returns:
-            str: Folder name with variables replaced
+            str: Folder name with variables replaced, or None if template/metadata invalid
         """
         if not template or not metadata:
             return None
 
-        result = template
-        for key, value in metadata.items():
-            if key != 'name':  # 'name' is only for auto-detect, not for templates
-                result = result.replace(f"{{{key}}}", str(value) if value else "Unknown")
-
-        return result
+        # Use the metadata handler's format_template method
+        return self.metadata_handler.format_template(template, metadata)
 
     def sanitize_folder_name(self, url_or_query):
-        """Create a safe folder name from URL or query"""
+        """Create a safe folder name from URL or query using enhanced sanitizer"""
         # Handle special Spotify queries
         special_queries = {
             "saved": "Liked Songs",
@@ -1179,23 +1343,8 @@ class SpotDLGUI(ctk.CTk):
             # YouTube video
             return f"YouTube_{url_or_query.split('=')[-1][:8]}"
 
-        # For other queries (including real album/playlist names), sanitize but keep more characters
-        # Replace problematic characters but keep safe punctuation
-        # Safe characters: alphanumeric, space, dash, underscore, apostrophe, comma, ampersand,
-        # exclamation, parentheses, square brackets, period
-        safe_chars = (' ', '-', '_', "'", ',', '&', '!', '(', ')', '[', ']', '.')
-        safe_name = ""
-        for c in url_or_query:
-            if c.isalnum() or c in safe_chars:
-                safe_name += c
-            else:
-                safe_name += '_'
-
-        # Clean up multiple underscores and trim
-        safe_name = ' '.join(safe_name.split())  # Normalize spaces
-        safe_name = safe_name.strip('_').strip()
-
-        return safe_name[:100]  # Limit length
+        # For other queries, use the enhanced sanitizer
+        return self.metadata_handler.sanitize_folder_name(url_or_query, max_length=100)
 
     def run_download(self, cmd, download_folder, query):
         """Run spotdl command in background with real-time output"""

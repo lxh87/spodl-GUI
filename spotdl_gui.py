@@ -76,7 +76,7 @@ class SpotDLGUI(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # Create sidebar
+        # Create sidebar with logo (no navigation buttons)
         self.create_sidebar()
         main_layout.addWidget(self.sidebar)
 
@@ -137,6 +137,7 @@ class SpotDLGUI(QMainWindow):
                 padding: 8px 16px;
                 font-weight: bold;
                 min-height: 30px;
+                min-width: 80px;
             }
 
             QPushButton:hover {
@@ -242,10 +243,6 @@ class SpotDLGUI(QMainWindow):
                 image: none;
             }
 
-            QCheckBox::indicator:checked::after {
-                content: "✓";
-            }
-
             QSlider::groove:horizontal {
                 background-color: #2b2b2b;
                 height: 8px;
@@ -342,7 +339,7 @@ class SpotDLGUI(QMainWindow):
         self.setStyleSheet(dark_stylesheet)
 
     def create_sidebar(self):
-        """Create sidebar with navigation buttons"""
+        """Create sidebar with logo (no navigation buttons)"""
         self.sidebar = QFrame()
         self.sidebar.setFixedWidth(200)
         self.sidebar.setStyleSheet("""
@@ -363,22 +360,8 @@ class SpotDLGUI(QMainWindow):
         logo_font.setBold(True)
         self.logo_label.setFont(logo_font)
         self.logo_label.setAlignment(Qt.AlignCenter)
+        self.logo_label.setWordWrap(True)
         layout.addWidget(self.logo_label)
-
-        layout.addSpacing(10)
-
-        # Navigation buttons
-        self.btn_download = QPushButton("Download")
-        self.btn_download.clicked.connect(lambda: self.tab_widget.setCurrentIndex(0))
-        layout.addWidget(self.btn_download)
-
-        self.btn_queue = QPushButton("Queue")
-        self.btn_queue.clicked.connect(lambda: self.tab_widget.setCurrentIndex(1))
-        layout.addWidget(self.btn_queue)
-
-        self.btn_settings = QPushButton("Settings")
-        self.btn_settings.clicked.connect(lambda: self.tab_widget.setCurrentIndex(2))
-        layout.addWidget(self.btn_settings)
 
         layout.addStretch()
 
@@ -695,6 +678,13 @@ class SpotDLGUI(QMainWindow):
 
         paste_btn = QPushButton("📋")
         paste_btn.setFixedSize(40, 40)
+        paste_btn.setStyleSheet("""
+            QPushButton {
+                font-size: 16pt;
+                padding: 0px;
+            }
+        """)
+        paste_btn.setToolTip("Paste from clipboard")
         paste_btn.clicked.connect(self.paste_url)
         url_layout.addWidget(paste_btn)
 
@@ -762,26 +752,32 @@ class SpotDLGUI(QMainWindow):
         check_grid = QGridLayout()
 
         self.preload_check = QCheckBox("Preload URLs")
+        self.preload_check.setToolTip("Preload download URLs before starting. Helps catch errors early.")
         self.preload_check.stateChanged.connect(self.update_command_preview)
         check_grid.addWidget(self.preload_check, 0, 0)
 
         self.sponsor_block_check = QCheckBox("Skip Sponsors")
+        self.sponsor_block_check.setToolTip("Use SponsorBlock to skip sponsor segments in videos (YouTube only)")
         self.sponsor_block_check.stateChanged.connect(self.update_command_preview)
         check_grid.addWidget(self.sponsor_block_check, 0, 1)
 
         self.skip_explicit_check = QCheckBox("Skip Explicit")
+        self.skip_explicit_check.setToolTip("Skip songs marked as explicit content")
         self.skip_explicit_check.stateChanged.connect(self.update_command_preview)
         check_grid.addWidget(self.skip_explicit_check, 0, 2)
 
         self.generate_lrc_check = QCheckBox("Generate LRC")
+        self.generate_lrc_check.setToolTip("Generate .lrc lyric files alongside audio files")
         self.generate_lrc_check.stateChanged.connect(self.update_command_preview)
         check_grid.addWidget(self.generate_lrc_check, 1, 0)
 
         self.playlist_numbering_check = QCheckBox("Playlist Numbering")
+        self.playlist_numbering_check.setToolTip("Set track numbers in metadata to playlist position (affects ID3 tags, not filenames)")
         self.playlist_numbering_check.stateChanged.connect(self.update_command_preview)
         check_grid.addWidget(self.playlist_numbering_check, 1, 1)
 
         self.folder_per_url_check = QCheckBox("Create Folder per URL")
+        self.folder_per_url_check.setToolTip("Create a separate folder for each URL/query (useful for batch downloads)")
         self.folder_per_url_check.setChecked(self.settings.get("create_folder_per_url", True))
         self.folder_per_url_check.stateChanged.connect(self.update_command_preview)
         check_grid.addWidget(self.folder_per_url_check, 1, 2)
@@ -804,6 +800,8 @@ class SpotDLGUI(QMainWindow):
         self.open_folder_btn = QPushButton("📁 Open Folder")
         self.open_folder_btn.setMinimumHeight(50)
         self.open_folder_btn.setFont(download_font)
+        self.open_folder_btn.setSizePolicy(self.open_folder_btn.sizePolicy().horizontalPolicy(),
+                                           self.open_folder_btn.sizePolicy().verticalPolicy())
         self.open_folder_btn.setProperty("class", "secondary")
         self.open_folder_btn.setStyleSheet("background-color: #424242;")
         self.open_folder_btn.clicked.connect(self.open_download_folder)
@@ -830,7 +828,14 @@ class SpotDLGUI(QMainWindow):
         command_layout.addWidget(self.command_entry)
 
         copy_btn = QPushButton("📄")
-        copy_btn.setFixedSize(35, 35)
+        copy_btn.setFixedSize(40, 40)
+        copy_btn.setStyleSheet("""
+            QPushButton {
+                font-size: 16pt;
+                padding: 0px;
+            }
+        """)
+        copy_btn.setToolTip("Copy command to clipboard")
         copy_btn.clicked.connect(self.copy_command)
         command_layout.addWidget(copy_btn)
 
@@ -920,8 +925,8 @@ class SpotDLGUI(QMainWindow):
         folder_input_layout.addWidget(browse_btn)
 
         open_folder_btn = QPushButton("📁 Open Folder")
-        open_folder_btn.setFixedWidth(120)
-        open_folder_btn.setStyleSheet("background-color: #424242;")
+        open_folder_btn.setMinimumWidth(130)
+        open_folder_btn.setStyleSheet("background-color: #424242; padding: 8px 12px;")
         open_folder_btn.clicked.connect(self.open_download_folder)
         folder_input_layout.addWidget(open_folder_btn)
 

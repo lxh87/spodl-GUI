@@ -16,10 +16,11 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QPushButton, QLineEdit, QTextEdit, QLabel,
     QComboBox, QCheckBox, QSlider, QFrame, QFileDialog, QMessageBox,
-    QTabWidget, QScrollArea
+    QTabWidget, QScrollArea, QProgressBar
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QObject
-from PySide6.QtGui import QFont, QTextCursor
+from PySide6.QtCore import Qt, QTimer, Signal, QObject, QUrl
+from PySide6.QtGui import QFont, QTextCursor, QPixmap
+from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 
 # Lazy import metadata handler - only when needed
 _metadata_handler = None
@@ -104,14 +105,24 @@ class SpotDLGUI(QMainWindow):
         """)
         main_layout.addWidget(self.tab_widget, 1)
 
-        # Initialize tabs
+        # Download queue - initialize BEFORE creating tabs
+        self.download_queue = []
+        self.current_process = None
+        self.queue_items = {}  # Track queue items with metadata
+
+        # Clipboard monitoring - initialize BEFORE creating tabs
+        self.clipboard = QApplication.clipboard()
+        self.last_clipboard_text = ""
+        self.clipboard_monitoring_enabled = False
+        self.clipboard_connected = False  # Track connection state
+
+        # Network manager for downloading images
+        self.network_manager = QNetworkAccessManager()
+
+        # Initialize tabs (now that all attributes are set up)
         self.create_download_tab()
         self.create_queue_tab()
         self.create_settings_tab()
-
-        # Download queue
-        self.download_queue = []
-        self.current_process = None
 
         # Initialize command preview
         self.update_command_preview()
@@ -664,9 +675,26 @@ class SpotDLGUI(QMainWindow):
         title.setFont(title_font)
         layout.addWidget(title)
 
-        # URL Input
+        # URL Input with clipboard monitoring option
+        url_header_layout = QHBoxLayout()
         url_label = QLabel("Spotify/YouTube URL or Query:")
-        layout.addWidget(url_label)
+        url_header_layout.addWidget(url_label)
+
+        url_header_layout.addStretch()
+
+        self.clipboard_monitor_check = QCheckBox("Auto-detect clipboard links")
+        self.clipboard_monitor_check.setToolTip("Automatically detect and paste Spotify/YouTube links when copied")
+        self.clipboard_monitor_check.stateChanged.connect(self.toggle_clipboard_monitoring)
+        self.clipboard_monitor_check.setChecked(True)  # Default to ON - this will trigger stateChanged
+        url_header_layout.addWidget(self.clipboard_monitor_check)
+
+        # Test button - copy test URL to clipboard
+        test_clipboard_btn = QPushButton("🧪 Test Clipboard")
+        test_clipboard_btn.setToolTip("Copy a test Spotify URL to clipboard to test auto-detection")
+        test_clipboard_btn.clicked.connect(self.test_clipboard_copy)
+        url_header_layout.addWidget(test_clipboard_btn)
+
+        layout.addLayout(url_header_layout)
 
         # URL input frame with paste button
         url_layout = QHBoxLayout()
@@ -844,7 +872,7 @@ class SpotDLGUI(QMainWindow):
         layout.addStretch()
 
     def create_queue_tab(self):
-        """Create the queue tab"""
+        """Create the queue tab with preview cards"""
         queue_widget = QWidget()
         layout = QVBoxLayout(queue_widget)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -852,7 +880,7 @@ class SpotDLGUI(QMainWindow):
         # Header
         header_layout = QHBoxLayout()
 
-        title = QLabel("Download Queue & Output")
+        title = QLabel("Download Queue")
         title_font = QFont()
         title_font.setPointSize(24)
         title_font.setBold(True)
@@ -868,7 +896,40 @@ class SpotDLGUI(QMainWindow):
 
         layout.addLayout(header_layout)
 
-        # Queue textbox
+        # Queue preview section - scrollable area for download cards
+        queue_preview_label = QLabel("Active Downloads:")
+        queue_preview_label_font = QFont()
+        queue_preview_label_font.setBold(True)
+        queue_preview_label.setFont(queue_preview_label_font)
+        layout.addWidget(queue_preview_label)
+
+        self.queue_preview_scroll = QScrollArea()
+        self.queue_preview_scroll.setWidgetResizable(True)
+        self.queue_preview_scroll.setFixedHeight(250)
+        self.queue_preview_scroll.setStyleSheet("""
+            QScrollArea {
+                background-color: #2b2b2b;
+                border: 1px solid #3d3d3d;
+                border-radius: 5px;
+            }
+        """)
+
+        self.queue_preview_widget = QWidget()
+        self.queue_preview_layout = QVBoxLayout(self.queue_preview_widget)
+        self.queue_preview_layout.setSpacing(10)
+        self.queue_preview_layout.setContentsMargins(10, 10, 10, 10)
+        self.queue_preview_layout.addStretch()
+
+        self.queue_preview_scroll.setWidget(self.queue_preview_widget)
+        layout.addWidget(self.queue_preview_scroll)
+
+        # Output log section
+        output_label = QLabel("Output Log:")
+        output_label_font = QFont()
+        output_label_font.setBold(True)
+        output_label.setFont(output_label_font)
+        layout.addWidget(output_label)
+
         self.queue_textbox = QTextEdit()
         self.queue_textbox.setReadOnly(True)
         queue_font = QFont("Consolas", 10)
@@ -1169,6 +1230,143 @@ class SpotDLGUI(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to copy to clipboard:\n{str(e)}")
 
+    def test_clipboard_copy(self):
+        """Test method - copies a test Spotify URL to clipboard with detailed logging"""
+        test_url = "https://open.spotify.com/album/3fsnW79AlDwj2mF8HhnByU?si=9tLoGPfvRt-yNX_2fmrqCw"
+
+        print("\n" + "="*60)
+        print("[TEST] Testing Clipboard Auto-Detection")
+        print("="*60)
+        print(f"[TEST] Copying test URL to clipboard: {test_url}")
+        print(f"[TEST] Clipboard monitoring enabled: {self.clipboard_monitoring_enabled}")
+        print(f"[TEST] Clipboard signal connected: {self.clipboard_connected}")
+        print(f"[TEST] Last clipboard text: {self.last_clipboard_text[:50] if self.last_clipboard_text else 'None'}...")
+
+        # Copy to clipboard
+        self.clipboard.setText(test_url)
+
+        print(f"[TEST] Clipboard.setText() called")
+        print(f"[TEST] Reading back from clipboard: {self.clipboard.text()[:50]}...")
+        print(f"[TEST] Waiting for dataChanged signal to fire...")
+        print("="*60 + "\n")
+
+        self.log_to_queue(f"🧪 Test: Copied test URL to clipboard\n")
+
+    def toggle_clipboard_monitoring(self, state):
+        """Enable/disable clipboard monitoring"""
+        print(f"[DEBUG] toggle_clipboard_monitoring() called with state={state}")
+
+        # Safety check - ensure attributes exist
+        if not hasattr(self, 'clipboard_connected'):
+            print(f"[DEBUG] clipboard_connected attribute doesn't exist yet, returning")
+            return
+
+        print(f"[DEBUG] Attributes exist, proceeding...")
+        # state is an int, Qt.Checked is an enum - compare values
+        self.clipboard_monitoring_enabled = (state == Qt.Checked.value or state == Qt.Checked)
+        print(f"[DEBUG] Clipboard monitoring toggled: enabled={self.clipboard_monitoring_enabled}, state={state} (type: {type(state)}), Qt.Checked={Qt.Checked}, Qt.Checked.value={Qt.Checked.value}")
+
+        if self.clipboard_monitoring_enabled:
+            # Start monitoring
+            if not self.clipboard_connected:
+                self.last_clipboard_text = self.clipboard.text()
+                self.clipboard.dataChanged.connect(self.check_clipboard)
+                self.clipboard_connected = True
+                print(f"[DEBUG] Clipboard signal connected")
+                self.log_to_queue("🔍 Clipboard monitoring enabled - will auto-detect Spotify/YouTube links\n")
+        else:
+            # Stop monitoring
+            if self.clipboard_connected:
+                try:
+                    self.clipboard.dataChanged.disconnect(self.check_clipboard)
+                    self.clipboard_connected = False
+                    print(f"[DEBUG] Clipboard signal disconnected")
+                except:
+                    pass
+                self.log_to_queue("⏸️ Clipboard monitoring disabled\n")
+
+    def check_clipboard(self):
+        """Check clipboard for Spotify/YouTube URLs"""
+        print(f"[DEBUG] check_clipboard() called!")
+        print(f"[DEBUG]   - monitoring_enabled: {self.clipboard_monitoring_enabled}")
+
+        if not self.clipboard_monitoring_enabled:
+            print(f"[DEBUG]   - Monitoring disabled, returning")
+            return
+
+        try:
+            text = self.clipboard.text().strip()
+            print(f"[DEBUG]   - Clipboard text: '{text[:100]}'")
+            print(f"[DEBUG]   - Last clipboard text: '{self.last_clipboard_text[:100] if self.last_clipboard_text else 'None'}'")
+
+            # Ignore if empty or same as last check
+            if not text:
+                print(f"[DEBUG]   - Text is empty, returning")
+                return
+
+            if text == self.last_clipboard_text:
+                print(f"[DEBUG]   - Text same as last check, returning")
+                return
+
+            self.last_clipboard_text = text
+            print(f"[DEBUG]   - New clipboard text detected!")
+
+            # Check if it's a Spotify or YouTube URL
+            is_valid = self.is_valid_music_url(text)
+            print(f"[DEBUG]   - is_valid_music_url returned: {is_valid}")
+
+            if is_valid:
+                print(f"[DEBUG]   - Valid music URL detected! Pasting to URL field...")
+                self.url_entry.setText(text)
+                self.log_to_queue(f"📋 Auto-detected link: {text[:60]}{'...' if len(text) > 60 else ''}\n")
+
+                # Switch to Download tab
+                self.tab_widget.setCurrentIndex(0)
+                print(f"[DEBUG]   - Switched to Download tab")
+            else:
+                print(f"[DEBUG]   - Not a valid music URL, ignoring")
+        except Exception as e:
+            print(f"[DEBUG] Clipboard check error: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def is_valid_music_url(self, text):
+        """Check if text is a valid Spotify or YouTube URL"""
+        print(f"[DEBUG] is_valid_music_url() checking: '{text[:80]}'")
+
+        if not text:
+            print(f"[DEBUG]   - Text is empty, returning False")
+            return False
+
+        text_lower = text.lower()
+        print(f"[DEBUG]   - Lowercase text: '{text_lower[:80]}'")
+
+        # Spotify URLs
+        has_spotify = 'spotify.com/' in text_lower
+        spotify_keywords = ['track', 'album', 'playlist', 'artist']
+        has_keyword = any(x in text_lower for x in spotify_keywords)
+        print(f"[DEBUG]   - Has 'spotify.com/': {has_spotify}")
+        print(f"[DEBUG]   - Has keyword {spotify_keywords}: {has_keyword}")
+
+        if has_spotify and has_keyword:
+            print(f"[DEBUG]   - Valid Spotify URL detected!")
+            return True
+
+        # YouTube URLs
+        has_youtube_watch = 'youtube.com/watch' in text_lower
+        has_youtu_be = 'youtu.be/' in text_lower
+        has_youtube_playlist = 'youtube.com/playlist' in text_lower
+        print(f"[DEBUG]   - Has 'youtube.com/watch': {has_youtube_watch}")
+        print(f"[DEBUG]   - Has 'youtu.be/': {has_youtu_be}")
+        print(f"[DEBUG]   - Has 'youtube.com/playlist': {has_youtube_playlist}")
+
+        if has_youtube_watch or has_youtu_be or has_youtube_playlist:
+            print(f"[DEBUG]   - Valid YouTube URL detected!")
+            return True
+
+        print(f"[DEBUG]   - Not a valid music URL")
+        return False
+
     def update_command_preview(self):
         """Update the command preview field with current settings"""
         query = self.url_entry.text().strip()
@@ -1212,6 +1410,149 @@ class SpotDLGUI(QMainWindow):
 
         # Update entry
         self.command_entry.setText(command)
+
+    def create_queue_card(self, queue_id, metadata):
+        """Create a preview card for a download with image, info, and progress bar"""
+        card = QFrame()
+        card.setStyleSheet("""
+            QFrame {
+                background-color: #242424;
+                border: 1px solid #3d3d3d;
+                border-radius: 8px;
+                padding: 10px;
+            }
+        """)
+        card.setFixedHeight(120)
+
+        card_layout = QHBoxLayout(card)
+        card_layout.setSpacing(15)
+
+        # Album/Playlist art (placeholder for now, will be loaded async)
+        art_label = QLabel()
+        art_label.setFixedSize(100, 100)
+        art_label.setStyleSheet("""
+            QLabel {
+                background-color: #1a1a1a;
+                border: 1px solid #3d3d3d;
+                border-radius: 5px;
+            }
+        """)
+        art_label.setAlignment(Qt.AlignCenter)
+        art_label.setText("🎵")
+        art_label.setFont(QFont("", 36))
+        card_layout.addWidget(art_label)
+
+        # Info section (name, artist, type)
+        info_layout = QVBoxLayout()
+        info_layout.setSpacing(5)
+
+        name_label = QLabel(metadata.get('name', 'Loading...'))
+        name_font = QFont()
+        name_font.setBold(True)
+        name_font.setPointSize(12)
+        name_label.setFont(name_font)
+        name_label.setStyleSheet("color: white;")
+        info_layout.addWidget(name_label)
+
+        artist_label = QLabel(metadata.get('artist', metadata.get('artists', '')))
+        artist_label.setStyleSheet("color: #aaaaaa;")
+        info_layout.addWidget(artist_label)
+
+        type_label = QLabel(f"Type: {metadata.get('type', 'track').title()}")
+        type_label.setStyleSheet("color: #888888; font-size: 9pt;")
+        info_layout.addWidget(type_label)
+
+        # Progress bar
+        progress_bar = QProgressBar()
+        progress_bar.setFixedHeight(20)
+        progress_bar.setValue(0)
+        progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #3d3d3d;
+                border-radius: 5px;
+                text-align: center;
+                background-color: #1a1a1a;
+                color: white;
+            }
+            QProgressBar::chunk {
+                background-color: #4CAF50;
+                border-radius: 4px;
+            }
+        """)
+        info_layout.addWidget(progress_bar)
+
+        card_layout.addLayout(info_layout, 1)
+
+        # Store references
+        card.art_label = art_label
+        card.name_label = name_label
+        card.artist_label = artist_label
+        card.progress_bar = progress_bar
+
+        # Add to queue preview (insert before the stretch)
+        self.queue_preview_layout.insertWidget(self.queue_preview_layout.count() - 1, card)
+
+        # Store card reference
+        self.queue_items[queue_id] = card
+
+        # Load image if URL available
+        if 'image_url' in metadata and metadata['image_url']:
+            self.load_queue_image(queue_id, metadata['image_url'])
+
+        return card
+
+    def load_queue_image(self, queue_id, image_url):
+        """Load album/playlist image asynchronously"""
+        request = QNetworkRequest(QUrl(image_url))
+        reply = self.network_manager.get(request)
+        reply.finished.connect(lambda: self.on_image_loaded(queue_id, reply))
+
+    def on_image_loaded(self, queue_id, reply):
+        """Handle loaded image"""
+        if queue_id not in self.queue_items:
+            reply.deleteLater()
+            return
+
+        if reply.error() == QNetworkReply.NoError:
+            data = reply.readAll()
+            pixmap = QPixmap()
+            pixmap.loadFromData(data)
+
+            if not pixmap.isNull():
+                # Scale to fit
+                scaled_pixmap = pixmap.scaled(100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                self.queue_items[queue_id].art_label.setPixmap(scaled_pixmap)
+                self.queue_items[queue_id].art_label.setText("")
+
+        reply.deleteLater()
+
+    def update_queue_progress(self, queue_id, progress):
+        """Update progress bar for a queue item"""
+        print(f"[DEBUG] Updating progress for queue_id={queue_id}, progress={progress}, exists={queue_id in self.queue_items}")
+        if queue_id in self.queue_items:
+            self.queue_items[queue_id].progress_bar.setValue(int(progress))
+            print(f"[DEBUG] Progress updated to {progress}%")
+        else:
+            print(f"[DEBUG] Queue ID not found in items. Available: {list(self.queue_items.keys())}")
+
+    def update_queue_card_metadata(self, queue_id, metadata):
+        """Update queue card with fetched metadata"""
+        if queue_id in self.queue_items:
+            card = self.queue_items[queue_id]
+            card.name_label.setText(metadata.get('name', 'Unknown'))
+            card.artist_label.setText(metadata.get('artist', 'Unknown'))
+
+            # Load image if available
+            if 'image_url' in metadata and metadata['image_url']:
+                self.load_queue_image(queue_id, metadata['image_url'])
+
+    def remove_queue_card(self, queue_id):
+        """Remove a queue card when download is complete"""
+        if queue_id in self.queue_items:
+            card = self.queue_items[queue_id]
+            self.queue_preview_layout.removeWidget(card)
+            card.deleteLater()
+            del self.queue_items[queue_id]
 
     def log_to_queue(self, message):
         """Thread-safe logging to queue"""
@@ -1271,6 +1612,19 @@ class SpotDLGUI(QMainWindow):
         self.log_to_queue(f"[{timestamp}] {icon} Starting download ({content_type})\n")
         self.log_to_queue(f"Query: {query}\n")
 
+        # Generate unique queue ID
+        queue_id = str(hash(query + str(timestamp)))
+
+        # Create initial queue card with placeholder data
+        initial_metadata = {
+            'name': 'Loading...',
+            'artist': 'Fetching metadata...',
+            'type': content_type
+        }
+        qid = queue_id
+        metadata = initial_metadata
+        QTimer.singleShot(0, lambda q=qid, m=metadata: self.create_queue_card(q, m))
+
         # Clear URL input
         self.url_entry.clear()
 
@@ -1280,37 +1634,53 @@ class SpotDLGUI(QMainWindow):
         # Start download preparation and execution in background thread
         threading.Thread(
             target=self.prepare_and_download,
-            args=(query, format_val, bitrate_val, threads_val, template_val,
+            args=(queue_id, query, format_val, bitrate_val, threads_val, template_val,
                   download_folder, folder_per_url,
                   is_playlist_url, is_album_url,
                   preload, sponsor_block, skip_explicit, generate_lrc, playlist_numbering),
             daemon=True
         ).start()
 
-    def prepare_and_download(self, query, format_val, bitrate_val, threads_val,
+    def prepare_and_download(self, queue_id, query, format_val, bitrate_val, threads_val,
                             template_val, download_folder, folder_per_url,
                             is_playlist_url, is_album_url,
                             preload, sponsor_block, skip_explicit, generate_lrc,
                             playlist_numbering):
         """Prepare download folder (fetch metadata if needed) and start download - runs in background thread"""
 
+        # Fetch metadata to update queue card
+        metadata = None
+        if is_playlist_url or is_album_url:
+            content_type_name = "album" if is_album_url else "playlist"
+            self.log_to_queue(f"🔍 Fetching {content_type_name} metadata from Spotify...\n")
+            metadata = self.get_spotify_metadata(query)
+
+            if metadata:
+                self.log_to_queue(f"✅ Found {content_type_name}: {metadata.get('name', 'Unknown')}\n")
+
+                # Update queue card with real metadata
+                artists_str = ', '.join(metadata.get('artists', [])) if isinstance(metadata.get('artists'), list) else metadata.get('artist', 'Unknown')
+                updated_metadata = {
+                    'name': metadata.get('name', 'Unknown'),
+                    'artist': artists_str,
+                    'type': metadata.get('type', content_type_name),
+                    'image_url': metadata.get('image_url', metadata.get('cover_url', ''))
+                }
+                qid = queue_id
+                meta = updated_metadata
+                QTimer.singleShot(0, lambda q=qid, m=meta: self.update_queue_card_metadata(q, m))
+            else:
+                self.log_to_queue(f"⚠️ Could not fetch metadata\n")
+
         # Handle folder per URL organization
         if folder_per_url:
             # For albums and playlists, try to get real names
             if is_playlist_url or is_album_url:
-                content_type_name = "album" if is_album_url else "playlist"
-
-                # Fetch metadata from Spotify (this is the slow part, now in background thread)
-                self.log_to_queue(f"🔍 Fetching {content_type_name} metadata from Spotify...\n")
-                metadata = self.get_spotify_metadata(query)
-
                 if metadata:
-                    self.log_to_queue(f"✅ Found {content_type_name}: {metadata.get('name', 'Unknown')}\n")
                     # Use the auto-detected name
                     folder_name = self.sanitize_folder_name(metadata['name'])
                 else:
                     # Metadata fetch failed, fallback to URL-based naming
-                    self.log_to_queue(f"⚠️ Could not fetch metadata, using URL-based name\n")
                     folder_name = self.sanitize_folder_name(query)
             else:
                 # For other types (tracks, etc.), create folder from URL
@@ -1344,8 +1714,12 @@ class SpotDLGUI(QMainWindow):
         self.log_to_queue(f"Command: {' '.join(cmd)}\n")
         self.log_to_queue(f"{'='*60}\n\n")
 
+        # Set progress to downloading (capture queue_id properly)
+        qid = queue_id
+        QTimer.singleShot(0, lambda q=qid: self.update_queue_progress(q, 50))
+
         # Now run the actual download
-        self.run_download(cmd, download_folder, query)
+        self.run_download(queue_id, cmd, download_folder, query)
 
     def get_spotify_metadata(self, url_or_query):
         """Get comprehensive metadata from Spotify using enhanced metadata handler
@@ -1437,8 +1811,10 @@ class SpotDLGUI(QMainWindow):
         # For other queries, use the enhanced sanitizer (lazy loaded)
         return get_metadata_handler().sanitize_folder_name(url_or_query, max_length=100)
 
-    def run_download(self, cmd, download_folder, query):
+    def run_download(self, queue_id, cmd, download_folder, query):
         """Run spotdl command in background with real-time output"""
+        print(f"[DEBUG] Starting download for queue_id: {queue_id}")
+
         try:
             os.makedirs(download_folder, exist_ok=True)
 
@@ -1455,21 +1831,40 @@ class SpotDLGUI(QMainWindow):
             # Read output line by line in real-time
             for line in process.stdout:
                 self.log_to_queue(line)
+                # Update progress based on output (simple estimation)
+                if "Downloaded" in line or "Processing" in line or "Downloading" in line:
+                    # Capture queue_id in closure properly
+                    qid = queue_id
+                    QTimer.singleShot(0, lambda q=qid: self.update_queue_progress(q, 75))
 
             # Wait for completion
             process.wait()
 
             # Log completion
             timestamp = datetime.now().strftime("%H:%M:%S")
+            # Capture queue_id properly for lambdas
+            qid = queue_id
+
             if process.returncode == 0:
                 self.log_to_queue(f"\n[{timestamp}] ✅ Download completed successfully!\n")
                 self.log_to_queue(f"📁 Files saved to: {download_folder}\n")
+                # Update progress to 100% and remove card after delay
+                print(f"[DEBUG] Download complete for queue_id: {qid}")
+                QTimer.singleShot(0, lambda q=qid: self.update_queue_progress(q, 100))
+                QTimer.singleShot(3000, lambda q=qid: self.remove_queue_card(q))
             else:
                 self.log_to_queue(f"\n[{timestamp}] ❌ Download failed with exit code {process.returncode}\n")
+                # Remove card on failure too
+                print(f"[DEBUG] Download failed for queue_id: {qid}")
+                QTimer.singleShot(3000, lambda q=qid: self.remove_queue_card(q))
 
         except Exception as e:
             timestamp = datetime.now().strftime("%H:%M:%S")
             self.log_to_queue(f"\n[{timestamp}] ❌ Error: {str(e)}\n")
+            # Remove card on error
+            qid = queue_id
+            print(f"[DEBUG] Download error for queue_id: {qid}: {e}")
+            QTimer.singleShot(3000, lambda q=qid: self.remove_queue_card(q))
 
     def clear_queue(self):
         """Clear the queue display"""

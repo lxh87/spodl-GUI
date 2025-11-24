@@ -84,15 +84,17 @@ class SpotDLGUI(ctk.CTk):
         # Load settings first
         self.load_settings()
 
-        # Initialize frames dictionary (lazy loading - frames created on-demand)
+        # Initialize frames
         self.frames = {}
-        self.frames_created = set()  # Track which frames have been created
+        self.create_download_frame()
+        self.create_queue_frame()
+        self.create_settings_frame()
 
         # Download queue
         self.download_queue = []
         self.current_process = None
 
-        # Show download frame by default (will create it lazily)
+        # Show download frame by default
         self.show_frame("download")
 
         # Initialize command preview
@@ -410,18 +412,7 @@ class SpotDLGUI(ctk.CTk):
             ctk.set_appearance_mode("light")
 
     def show_frame(self, frame_name):
-        """Show the specified frame (lazy loading)"""
-        # Create frame if it hasn't been created yet
-        if frame_name not in self.frames_created:
-            if frame_name == "download":
-                self.create_download_frame()
-            elif frame_name == "queue":
-                self.create_queue_frame()
-            elif frame_name == "settings":
-                self.create_settings_frame()
-            self.frames_created.add(frame_name)
-
-        # Show requested frame, hide others
+        """Show the specified frame"""
         for name, frame in self.frames.items():
             if name == frame_name:
                 frame.grid(row=0, column=0, sticky="nsew")

@@ -695,7 +695,7 @@ class SpotDLGUI(ctk.CTk):
 
     def create_settings_frame(self):
         """Create the settings tab"""
-        frame = ctk.CTkScrollableFrame(self.main_frame, fg_color="transparent")
+        frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         frame.grid_columnconfigure(0, weight=1)
         self.frames["settings"] = frame
 

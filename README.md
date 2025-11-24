@@ -1,235 +1,164 @@
-# 🎵 SpotDL Desktop GUI
+# SpotDL GUI
 
-A beautiful, modern desktop application for SpotDL - no browser needed!
+A modern, high-performance desktop interface for [SpotDL](https://github.com/spotDL/spotify-downloader) built with PySide6.
 
-![Features](https://img.shields.io/badge/Python-3.8+-blue)
-![GUI](https://img.shields.io/badge/GUI-CustomTkinter-green)
-![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Mac%20%7C%20Linux-lightgrey)
+## Features
 
-## ✨ Features
+- **Modern Dark Theme** - Professional Qt-based interface
+- **Fast Performance** - 2.8x faster than CustomTkinter
+- **Dual Template System** - Automatic playlist vs album detection
+- **Real-time Downloads** - Live output and progress tracking
+- **Smart Organization** - Customizable folder structures
+- **Tag System** - Quick template variable insertion
+- **Background Processing** - Non-blocking downloads
 
-- 🎨 **Modern, Clean Interface** - Dark/Light theme support
-- 🚀 **Simple Setup** - Just run one Python file
-- 🎵 **All SpotDL Features** - Full access to all CLI options
-- 📃 **Smart Playlist Organization** - Auto-organize playlists in dedicated folders
-- 📊 **Real-time Queue** - Track your downloads with live SpotDL output
-- ⚙️ **Customizable** - Format, bitrate, output templates, and more
-- 💻 **Cross-Platform** - Works on Windows, Mac, and Linux
-- 📁 **One-Click Folder Access** - Open downloads instantly
+## Installation
 
-## 🚀 Quick Start
+### Prerequisites
 
-### 1. Install Dependencies
+1. **Python 3.8+** required
+2. **PySide6** for the GUI
+3. **SpotDL** for downloading
+
+### Install Dependencies
 
 ```bash
-pip install customtkinter
+pip install PySide6
+pip install spotdl
 ```
 
-Or install everything:
+Or use the requirements file:
+
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Run the App
+## Usage
+
+Run the GUI:
 
 ```bash
 python spotdl_gui.py
 ```
 
-That's it! 🎉
+### Quick Start
 
-## 📸 What It Looks Like
+1. **Enter URL** - Paste a Spotify/YouTube URL
+2. **Configure** - Choose format, bitrate, options
+3. **Download** - Click the download button
+4. **Monitor** - Watch progress in the Queue tab
 
+## Configuration
+
+Settings are saved to `~/.spotdl_gui_config.json`
+
+### Templates
+
+**Song File Template** (for albums/tracks):
 ```
-┌─────────────────────────────────────────────┐
-│  🎵 SpotDL GUI          [Dark Mode] [Light] │
-├──────────┬──────────────────────────────────┤
-│          │  Download Music                  │
-│ Download │                                  │
-│ Queue    │  [Spotify/YouTube URL]           │
-│ Settings │                                  │
-│          │  Format: [MP3  ▼]                │
-│          │  Bitrate: [320k ▼]               │
-│          │                                  │
-│          │  ☑ Preload  ☑ Skip Sponsors      │
-│          │  ☐ Skip Explicit  ☐ Generate LRC │
-│          │                                  │
-│          │  [⬇️ Download]                   │
-└──────────┴──────────────────────────────────┘
+{album-artist}/{year} - {album}/{track-number} - {title}.{output-ext}
 ```
 
-## 🎯 How to Use
-
-### Download a Song/Playlist
-
-1. **Paste URL** - Spotify or YouTube link
-2. **Choose options** - Format, bitrate, etc.
-3. **Click Download** - It starts immediately!
-4. **Check Queue** - See progress in the Queue tab
-
-### Quick Shortcuts
-
-Use the quick buttons for:
-- **Liked Songs** - Downloads all your saved tracks
-- **All Playlists** - Downloads all your playlists
-- **Followed Artists** - Downloads from artists you follow
-
-### Supported URLs
-
-- Spotify tracks, albums, playlists, artists
-- YouTube videos and playlists
-- Special queries: `saved`, `all-user-playlists`, etc.
-
-## ⚙️ Settings
-
-### Download Folder
-Choose where your music is saved (default: Music folder)
-
-### Output Template
-Customize filenames using variables:
-- `{artists} - {title}.{output-ext}` → "Artist - Song.mp3"
-- `{album}/{track-number} - {title}.{output-ext}` → "Album/01 - Song.mp3"
-- `{year}/{artist}/{album}/{title}.{output-ext}` → "2024/Artist/Album/Song.mp3"
+**Playlist Template** (for playlists):
+```
+{list-name}/{list-position} - {artists} - {title}.{output-ext}
+```
 
 ### Available Variables
-- `{title}`, `{artist}`, `{artists}`, `{album}`
-- `{album-artist}`, `{genre}`, `{year}`
-- `{track-number}`, `{disc-number}`
-- `{isrc}`, `{publisher}`, `{output-ext}`
 
-### Concurrent Downloads
-Adjust how many songs download at once (1-16 threads)
+**Song/Album Variables:**
+- `{title}` - Song title
+- `{artist}` / `{artists}` - Artist names
+- `{album}` / `{album-artist}` - Album info
+- `{year}` - Release year
+- `{track-number}` / `{disc-number}` - Track numbers
+- `{genre}` - Genre
+- `{output-ext}` - File extension
 
-## 🎨 Themes
+**Playlist Variables:**
+- `{list-name}` - Playlist name
+- `{list-position}` - Track position (01, 02, ...)
+- `{list-length}` - Total tracks
+- Plus all song variables above
 
-Toggle between **Dark Mode** and **Light Mode** with the switch in the sidebar!
+## Performance
 
-## 📋 Requirements
-
-- **Python 3.8+**
-- **SpotDL** - Install with `pip install spotdl`
-- **CustomTkinter** - Install with `pip install customtkinter`
-
-## 🔧 Advanced Features
-
-### Preload URLs
-Pre-fetch download links for faster processing
-
-### Skip Sponsors
-Use SponsorBlock to skip sponsored segments (YouTube)
-
-### Skip Explicit
-Automatically skip songs marked as explicit
-
-### Generate LRC
-Create synced lyrics files (.lrc) for music players
-
-### Playlist Numbering
-Add playlist position to track metadata
-
-### Organize Playlists
-Automatically organize playlists into `Playlists/{playlist-name}` folders:
-- **Custom naming**: Enter a custom name in the "Playlist Folder Name" field
-- **Auto-naming**: Leave blank to use auto-generated names (e.g., "Liked Songs", "Spotify_Playlist_xxxxx")
-- **Smart detection**: Automatically detects Spotify and YouTube playlists
-
-### Folder per URL
-Create a separate folder for each URL you download (useful for organizing albums and tracks)
-
-## 📁 Where Are My Downloads?
-
-By default, downloads go to your **Music folder**:
-- **Windows**: `C:\Users\YourName\Music`
-- **Mac**: `~/Music`
-- **Linux**: `~/Music`
-
-You can change this in **Settings → Download Folder**
-
-### Folder Structure Examples
-
-With **Organize Playlists** enabled, your library might look like:
+### Benchmark Results
 
 ```
-Music/
-├── Playlists/
-│   ├── Liked Songs/
-│   │   ├── Artist/2024 - Album/01 - Song.mp3
-│   │   └── Artist/2024 - Album/02 - Song.mp3
-│   ├── My Workout Mix/
-│   │   └── ...
-│   └── Spotify_Playlist_37i9dQZ/
-│       └── ...
-├── Artist Name/
-│   └── 2024 - Album Name/
-│       ├── 01 - Song Title.mp3
-│       └── 02 - Song Title.mp3
-└── Another Artist/
-    └── 2023 - Another Album/
-        └── ...
+Widget Creation (50 widgets):
+- CustomTkinter: 0.540s
+- PySide6:      0.190s
+→ 2.8x faster
+
+Expected Improvements:
+- Startup: ~1-2s faster
+- Tab switching: Instant
+- Window resizing: Smooth 60fps
 ```
 
-**Single tracks and albums** go directly to the main download folder using your output template, while **playlists** are organized in their own subfolder.
+## Features in Detail
 
-## 🐛 Troubleshooting
+### Automatic Template Switching
 
-### "SpotDL not found"
-Make sure SpotDL is installed:
+The app automatically detects content type and uses the appropriate template:
+
+- **Playlists** → Playlist template (all songs in one folder)
+- **Albums** → Album template (organized by artist/album)
+- **Tracks** → Album template
+
+### Tag Buttons
+
+Click any tag button to insert it at cursor position:
+- Alphabetically sorted
+- 6-column layout for easy scanning
+- Separate tags for song vs playlist templates
+
+### Command Preview
+
+See the exact `spotdl` command that will run:
+- Real-time updates as you change settings
+- Copy button for manual execution
+- Verify settings before downloading
+
+### Background Downloads
+
+Downloads run in background threads:
+- UI remains responsive
+- Real-time output to Queue tab
+- Multiple concurrent downloads (configurable threads)
+
+## Rollback to CustomTkinter
+
+If you need the old CustomTkinter version:
+
 ```bash
-pip install spotdl
-spotdl --version
+# Using git tag
+git checkout v1.0-customtkinter
+
+# Or use the backup file
+mv spotdl_gui.py spotdl_gui_pyside.py
+mv spotdl_gui_ctk.py spotdl_gui.py
 ```
 
-### Downloads not appearing
-1. Check the **Queue** tab for errors
-2. Check your **Download Folder** in Settings
-3. Make sure you have write permissions to the folder
+## Documentation
 
-### GUI not opening
-Make sure CustomTkinter is installed:
-```bash
-pip install customtkinter
-```
+- [METADATA_SYSTEM.md](METADATA_SYSTEM.md) - Metadata extraction system
+- [PLAYLIST_HANDLING.md](PLAYLIST_HANDLING.md) - Playlist vs album handling
+- [CHANGELOG_UI.md](CHANGELOG_UI.md) - UI improvements history
 
-## 🆚 Desktop vs Web GUI
+## Requirements
 
-**Desktop GUI (This)**:
-- ✅ Simpler setup (one command)
-- ✅ Native desktop app
-- ✅ No browser needed
-- ✅ Lighter weight
+- **PySide6 >= 6.6.0** - Qt GUI framework
+- **Python 3.8+** - Runtime environment
+- **SpotDL** - Music downloader (pip, source, or .exe)
 
-**Web GUI** (in `spotdl-gui/`):
-- ✅ Modern web technologies
-- ✅ Can run on remote server
-- ✅ Access from any device
-- ✅ More features (planned)
+## License
 
-Choose what works best for you!
+This GUI is a frontend for SpotDL. See [SpotDL's license](https://github.com/spotDL/spotify-downloader/blob/master/LICENSE) for the underlying downloader.
 
-## 📝 Tips
+## Credits
 
-1. **Batch Downloads** - Paste playlist URLs to download multiple songs
-2. **Organize Playlists** - Enable "Organize Playlists" to keep playlists in dedicated folders
-3. **Custom Playlist Names** - Name your playlists before downloading for easy organization
-4. **Custom Templates** - Organize your library with folder structures
-5. **Quality Settings** - Use FLAC for lossless, MP3 320k for high quality
-6. **Spotify Login** - Configure in SpotDL config for your library access
-7. **One-Click Access** - Use the 📁 Open Folder button to instantly view your downloads
-
-## 🚀 Next Steps
-
-Want even more features? Try:
-- The **Web GUI** - Modern React interface (see `spotdl-gui/` folder)
-- **SpotDL CLI** - Direct command-line access
-
-## ❤️ Credits
-
-- **SpotDL** - The amazing CLI tool that powers everything
-- **CustomTkinter** - Beautiful modern GUI framework
-- **You** - For using this app!
-
----
-
-**Enjoy your music!** 🎵
-
-Need help? Check the SpotDL documentation at https://spotdl.rtfd.io/
+Built with:
+- [PySide6](https://www.qt.io/qt-for-python) - Qt for Python
+- [SpotDL](https://github.com/spotDL/spotify-downloader) - Music downloader

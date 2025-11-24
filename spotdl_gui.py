@@ -1,23 +1,25 @@
 #!/usr/bin/env python3
 """
 SpotDL Desktop GUI
-A modern desktop interface for SpotDL
+A modern desktop interface for SpotDL - PySide6 version
 """
 
-import customtkinter as ctk
 import subprocess
 import threading
 import os
 import json
 from pathlib import Path
-from tkinter import filedialog, messagebox
 import sys
 from datetime import datetime
-import time
 
-# Set appearance
-ctk.set_appearance_mode("dark")
-ctk.set_default_color_theme("green")
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QGridLayout, QPushButton, QLineEdit, QTextEdit, QLabel,
+    QComboBox, QCheckBox, QSlider, QFrame, QFileDialog, QMessageBox,
+    QTabWidget, QScrollArea
+)
+from PySide6.QtCore import Qt, QTimer, Signal, QObject
+from PySide6.QtGui import QFont, QTextCursor
 
 # Lazy import metadata handler - only when needed
 _metadata_handler = None
@@ -30,7 +32,27 @@ def get_metadata_handler():
     return _metadata_handler
 
 
-class SpotDLGUI(ctk.CTk):
+class ThreadSafeLogger(QObject):
+    """Thread-safe logger using Qt signals"""
+    log_signal = Signal(str)
+
+    def __init__(self, text_widget):
+        super().__init__()
+        self.text_widget = text_widget
+        self.log_signal.connect(self._append_text)
+
+    def _append_text(self, text):
+        """Append text to widget (runs in main thread)"""
+        self.text_widget.moveCursor(QTextCursor.End)
+        self.text_widget.insertPlainText(text)
+        self.text_widget.moveCursor(QTextCursor.End)
+
+    def log(self, message):
+        """Thread-safe logging"""
+        self.log_signal.emit(message)
+
+
+class SpotDLGUI(QMainWindow):
     def __init__(self):
         super().__init__()
 
@@ -38,78 +60,327 @@ class SpotDLGUI(ctk.CTk):
         self.config_file = Path.home() / ".spotdl_gui_config.json"
 
         # Window setup
-        self.title("SpotDL GUI")
-        self.geometry("1100x1200")
-
-        # Configure grid
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(0, weight=1)
-
-        # Sidebar
-        self.sidebar = ctk.CTkFrame(self, width=200, corner_radius=0)
-        self.sidebar.grid(row=0, column=0, sticky="nsew")
-        self.sidebar.grid_rowconfigure(6, weight=1)
-
-        # Logo
-        self.logo_label = ctk.CTkLabel(
-            self.sidebar,
-            text="🎵 SpotDL GUI",
-            font=ctk.CTkFont(size=20, weight="bold")
-        )
-        self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
-
-        # Sidebar buttons
-        self.btn_download = ctk.CTkButton(
-            self.sidebar,
-            text="Download",
-            command=lambda: self.show_frame("download")
-        )
-        self.btn_download.grid(row=1, column=0, padx=20, pady=10)
-
-        self.btn_queue = ctk.CTkButton(
-            self.sidebar,
-            text="Queue",
-            command=lambda: self.show_frame("queue")
-        )
-        self.btn_queue.grid(row=2, column=0, padx=20, pady=10)
-
-        self.btn_settings = ctk.CTkButton(
-            self.sidebar,
-            text="Settings",
-            command=lambda: self.show_frame("settings")
-        )
-        self.btn_settings.grid(row=3, column=0, padx=20, pady=10)
-
-        # Main content area
-        self.main_frame = ctk.CTkFrame(self, corner_radius=0)
-        self.main_frame.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
-        self.main_frame.grid_columnconfigure(0, weight=1)
-        self.main_frame.grid_rowconfigure(0, weight=1)
+        self.setWindowTitle("SpotDL GUI")
+        self.resize(1100, 1200)
 
         # Load settings first
         self.load_settings()
 
-        # Initialize frames
-        self.frames = {}
-        self.create_download_frame()
-        self.create_queue_frame()
-        self.create_settings_frame()
+        # Apply dark theme
+        self.apply_dark_theme()
+
+        # Create central widget and main layout
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QHBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # Create sidebar
+        self.create_sidebar()
+        main_layout.addWidget(self.sidebar)
+
+        # Create tab widget for main content
+        self.tab_widget = QTabWidget()
+        self.tab_widget.setStyleSheet("""
+            QTabWidget::pane {
+                border: none;
+                background-color: #1a1a1a;
+            }
+            QTabBar::tab {
+                background-color: #2b2b2b;
+                color: white;
+                padding: 10px 20px;
+                margin-right: 2px;
+                border-top-left-radius: 5px;
+                border-top-right-radius: 5px;
+            }
+            QTabBar::tab:selected {
+                background-color: #4CAF50;
+            }
+            QTabBar::tab:hover:!selected {
+                background-color: #3d3d3d;
+            }
+        """)
+        main_layout.addWidget(self.tab_widget, 1)
+
+        # Initialize tabs
+        self.create_download_tab()
+        self.create_queue_tab()
+        self.create_settings_tab()
 
         # Download queue
         self.download_queue = []
         self.current_process = None
 
-        # Show download frame by default
-        self.show_frame("download")
-
         # Initialize command preview
         self.update_command_preview()
 
-        # Save settings on close
-        self.protocol("WM_DELETE_WINDOW", self.on_closing)
-
         # Defer non-critical startup tasks
-        self.after(100, self.check_spotdl)
+        QTimer.singleShot(100, self.check_spotdl)
+
+    def apply_dark_theme(self):
+        """Apply comprehensive dark theme using QSS"""
+        dark_stylesheet = """
+            QMainWindow, QWidget {
+                background-color: #1a1a1a;
+                color: white;
+                font-family: 'Segoe UI', Arial, sans-serif;
+                font-size: 11pt;
+            }
+
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                padding: 8px 16px;
+                font-weight: bold;
+                min-height: 30px;
+            }
+
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+
+            QPushButton:pressed {
+                background-color: #3d8b40;
+            }
+
+            QPushButton:disabled {
+                background-color: #2b2b2b;
+                color: #666666;
+            }
+
+            QPushButton.secondary {
+                background-color: #424242;
+            }
+
+            QPushButton.secondary:hover {
+                background-color: #4a4a4a;
+            }
+
+            QPushButton.danger {
+                background-color: #f44336;
+            }
+
+            QPushButton.danger:hover {
+                background-color: #da190b;
+            }
+
+            QLineEdit, QTextEdit {
+                background-color: #2b2b2b;
+                color: white;
+                border: 1px solid #3d3d3d;
+                border-radius: 5px;
+                padding: 8px;
+                selection-background-color: #4CAF50;
+            }
+
+            QLineEdit:focus, QTextEdit:focus {
+                border: 1px solid #4CAF50;
+            }
+
+            QLineEdit:read-only {
+                background-color: #242424;
+                color: #cccccc;
+            }
+
+            QComboBox {
+                background-color: #2b2b2b;
+                color: white;
+                border: 1px solid #3d3d3d;
+                border-radius: 5px;
+                padding: 6px 10px;
+                min-height: 30px;
+            }
+
+            QComboBox:hover {
+                border: 1px solid #4CAF50;
+            }
+
+            QComboBox::drop-down {
+                border: none;
+                width: 30px;
+            }
+
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 5px solid white;
+                margin-right: 10px;
+            }
+
+            QComboBox QAbstractItemView {
+                background-color: #2b2b2b;
+                color: white;
+                selection-background-color: #4CAF50;
+                border: 1px solid #3d3d3d;
+            }
+
+            QCheckBox {
+                color: white;
+                spacing: 8px;
+            }
+
+            QCheckBox::indicator {
+                width: 20px;
+                height: 20px;
+                border: 2px solid #3d3d3d;
+                border-radius: 4px;
+                background-color: #2b2b2b;
+            }
+
+            QCheckBox::indicator:hover {
+                border: 2px solid #4CAF50;
+            }
+
+            QCheckBox::indicator:checked {
+                background-color: #4CAF50;
+                border: 2px solid #4CAF50;
+                image: none;
+            }
+
+            QCheckBox::indicator:checked::after {
+                content: "✓";
+            }
+
+            QSlider::groove:horizontal {
+                background-color: #2b2b2b;
+                height: 8px;
+                border-radius: 4px;
+            }
+
+            QSlider::handle:horizontal {
+                background-color: #4CAF50;
+                width: 18px;
+                height: 18px;
+                margin: -5px 0;
+                border-radius: 9px;
+            }
+
+            QSlider::handle:horizontal:hover {
+                background-color: #45a049;
+            }
+
+            QSlider::sub-page:horizontal {
+                background-color: #4CAF50;
+                border-radius: 4px;
+            }
+
+            QFrame {
+                background-color: #242424;
+                border-radius: 5px;
+            }
+
+            QLabel {
+                color: white;
+                background-color: transparent;
+            }
+
+            QLabel.title {
+                font-size: 24pt;
+                font-weight: bold;
+            }
+
+            QLabel.subtitle {
+                font-weight: bold;
+                font-size: 12pt;
+            }
+
+            QLabel.help {
+                color: #999999;
+                font-size: 9pt;
+            }
+
+            QScrollArea {
+                border: none;
+                background-color: transparent;
+            }
+
+            QScrollBar:vertical {
+                background-color: #1a1a1a;
+                width: 12px;
+                border-radius: 6px;
+            }
+
+            QScrollBar::handle:vertical {
+                background-color: #4CAF50;
+                border-radius: 6px;
+                min-height: 30px;
+            }
+
+            QScrollBar::handle:vertical:hover {
+                background-color: #45a049;
+            }
+
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+
+            QScrollBar:horizontal {
+                background-color: #1a1a1a;
+                height: 12px;
+                border-radius: 6px;
+            }
+
+            QScrollBar::handle:horizontal {
+                background-color: #4CAF50;
+                border-radius: 6px;
+                min-width: 30px;
+            }
+
+            QScrollBar::handle:horizontal:hover {
+                background-color: #45a049;
+            }
+
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                width: 0px;
+            }
+        """
+        self.setStyleSheet(dark_stylesheet)
+
+    def create_sidebar(self):
+        """Create sidebar with navigation buttons"""
+        self.sidebar = QFrame()
+        self.sidebar.setFixedWidth(200)
+        self.sidebar.setStyleSheet("""
+            QFrame {
+                background-color: #242424;
+                border-radius: 0px;
+            }
+        """)
+
+        layout = QVBoxLayout(self.sidebar)
+        layout.setSpacing(10)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        # Logo
+        self.logo_label = QLabel("🎵 SpotDL GUI")
+        logo_font = QFont()
+        logo_font.setPointSize(16)
+        logo_font.setBold(True)
+        self.logo_label.setFont(logo_font)
+        self.logo_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.logo_label)
+
+        layout.addSpacing(10)
+
+        # Navigation buttons
+        self.btn_download = QPushButton("Download")
+        self.btn_download.clicked.connect(lambda: self.tab_widget.setCurrentIndex(0))
+        layout.addWidget(self.btn_download)
+
+        self.btn_queue = QPushButton("Queue")
+        self.btn_queue.clicked.connect(lambda: self.tab_widget.setCurrentIndex(1))
+        layout.addWidget(self.btn_queue)
+
+        self.btn_settings = QPushButton("Settings")
+        self.btn_settings.clicked.connect(lambda: self.tab_widget.setCurrentIndex(2))
+        layout.addWidget(self.btn_settings)
+
+        layout.addStretch()
 
     def load_settings(self):
         """Load settings from config file"""
@@ -140,14 +411,14 @@ class SpotDLGUI(ctk.CTk):
         """Save settings to config file"""
         try:
             # Update settings from UI
-            self.settings["format"] = self.format_var.get()
-            self.settings["bitrate"] = self.bitrate_var.get()
-            self.settings["threads"] = self.threads_var.get()
-            self.settings["output"] = self.template_entry.get()
-            self.settings["playlist_output"] = self.playlist_template_entry.get()
-            self.settings["download_folder"] = self.folder_entry.get()
-            self.settings["theme"] = "dark" if self.theme_switch.get() == "dark" else "light"
-            self.settings["create_folder_per_url"] = self.folder_per_url_var.get()
+            self.settings["format"] = self.format_combo.currentText()
+            self.settings["bitrate"] = self.bitrate_combo.currentText()
+            self.settings["threads"] = str(self.threads_slider.value())
+            self.settings["output"] = self.template_entry.text()
+            self.settings["playlist_output"] = self.playlist_template_entry.text()
+            self.settings["download_folder"] = self.folder_entry.text()
+            self.settings["theme"] = "dark"  # Always dark in this version
+            self.settings["create_folder_per_url"] = self.folder_per_url_check.isChecked()
 
             with open(self.config_file, 'w') as f:
                 json.dump(self.settings, f, indent=2)
@@ -157,12 +428,12 @@ class SpotDLGUI(ctk.CTk):
             # Update command preview with new settings
             self.update_command_preview()
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to save settings: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Failed to save settings: {str(e)}")
 
-    def on_closing(self):
+    def closeEvent(self, event):
         """Handle window close event"""
         self.save_settings()
-        self.destroy()
+        event.accept()
 
     def check_spotdl(self):
         """Check if SpotDL is installed (initial check)"""
@@ -175,9 +446,10 @@ class SpotDLGUI(ctk.CTk):
             )
             if result.returncode == 0:
                 version = result.stdout.strip()
-                self.logo_label.configure(text=f"🎵 SpotDL GUI\n{version}")
+                self.logo_label.setText(f"🎵 SpotDL GUI\n{version}")
         except:
-            messagebox.showwarning(
+            QMessageBox.warning(
+                self,
                 "SpotDL Not Found",
                 "SpotDL is not installed or not in PATH.\n\n"
                 "Install it with: pip install spotdl\n"
@@ -195,39 +467,29 @@ class SpotDLGUI(ctk.CTk):
             )
             if result.returncode == 0:
                 version = result.stdout.strip()
-                self.spotdl_status_label.configure(
-                    text=f"✅ SpotDL is installed: {version}",
-                    text_color="#4CAF50"
-                )
-                self.logo_label.configure(text=f"🎵 SpotDL GUI\n{version}")
+                self.spotdl_status_label.setText(f"✅ SpotDL is installed: {version}")
+                self.spotdl_status_label.setStyleSheet("color: #4CAF50;")
+                self.logo_label.setText(f"🎵 SpotDL GUI\n{version}")
                 return True
             else:
-                self.spotdl_status_label.configure(
-                    text="❌ SpotDL is not working correctly",
-                    text_color="#f44336"
-                )
+                self.spotdl_status_label.setText("❌ SpotDL is not working correctly")
+                self.spotdl_status_label.setStyleSheet("color: #f44336;")
                 return False
         except FileNotFoundError:
-            self.spotdl_status_label.configure(
-                text="❌ SpotDL is not installed",
-                text_color="#f44336"
-            )
+            self.spotdl_status_label.setText("❌ SpotDL is not installed")
+            self.spotdl_status_label.setStyleSheet("color: #f44336;")
             return False
         except Exception as e:
-            self.spotdl_status_label.configure(
-                text=f"❌ Error checking SpotDL: {str(e)}",
-                text_color="#f44336"
-            )
+            self.spotdl_status_label.setText(f"❌ Error checking SpotDL: {str(e)}")
+            self.spotdl_status_label.setStyleSheet("color: #f44336;")
             return False
 
     def install_spotdl(self):
         """Install SpotDL using pip"""
         def install_thread():
             try:
-                self.spotdl_status_label.configure(
-                    text="⏳ Installing SpotDL...",
-                    text_color="#FF9800"
-                )
+                QTimer.singleShot(0, lambda: self.spotdl_status_label.setText("⏳ Installing SpotDL..."))
+                QTimer.singleShot(0, lambda: self.spotdl_status_label.setStyleSheet("color: #FF9800;"))
 
                 # Run pip install
                 result = subprocess.run(
@@ -238,27 +500,20 @@ class SpotDLGUI(ctk.CTk):
                 )
 
                 if result.returncode == 0:
-                    self.spotdl_status_label.configure(
-                        text="✅ SpotDL installed successfully!",
-                        text_color="#4CAF50"
-                    )
+                    QTimer.singleShot(0, lambda: self.spotdl_status_label.setText("✅ SpotDL installed successfully!"))
+                    QTimer.singleShot(0, lambda: self.spotdl_status_label.setStyleSheet("color: #4CAF50;"))
                     # Recheck installation
-                    self.after(1000, self.check_spotdl_installation)
+                    QTimer.singleShot(1000, self.check_spotdl_installation)
                 else:
-                    self.spotdl_status_label.configure(
-                        text=f"❌ Installation failed: {result.stderr[:100]}",
-                        text_color="#f44336"
-                    )
+                    error_msg = result.stderr[:100] if result.stderr else "Unknown error"
+                    QTimer.singleShot(0, lambda: self.spotdl_status_label.setText(f"❌ Installation failed: {error_msg}"))
+                    QTimer.singleShot(0, lambda: self.spotdl_status_label.setStyleSheet("color: #f44336;"))
             except subprocess.TimeoutExpired:
-                self.spotdl_status_label.configure(
-                    text="❌ Installation timed out",
-                    text_color="#f44336"
-                )
+                QTimer.singleShot(0, lambda: self.spotdl_status_label.setText("❌ Installation timed out"))
+                QTimer.singleShot(0, lambda: self.spotdl_status_label.setStyleSheet("color: #f44336;"))
             except Exception as e:
-                self.spotdl_status_label.configure(
-                    text=f"❌ Installation error: {str(e)}",
-                    text_color="#f44336"
-                )
+                QTimer.singleShot(0, lambda: self.spotdl_status_label.setText(f"❌ Installation error: {str(e)}"))
+                QTimer.singleShot(0, lambda: self.spotdl_status_label.setStyleSheet("color: #f44336;"))
 
         # Run installation in a thread
         threading.Thread(target=install_thread, daemon=True).start()
@@ -347,11 +602,11 @@ class SpotDLGUI(ctk.CTk):
         except:
             return template
 
-    def update_template_example(self, *args):
+    def update_template_example(self):
         """Update the example output when template changes"""
-        template = self.template_entry.get()
+        template = self.template_entry.text()
         example = self.generate_example_output(template)
-        self.example_output_label.configure(text=f"Preview: {example}")
+        self.example_output_label.setText(f"Preview: {example}")
 
     def generate_playlist_example_output(self, template):
         """Generate example output for playlist template using consistent example data"""
@@ -381,96 +636,76 @@ class SpotDLGUI(ctk.CTk):
         except:
             return template
 
-    def update_playlist_template_example(self, *args):
+    def update_playlist_template_example(self):
         """Update the playlist template example output when template changes"""
-        template = self.playlist_template_entry.get()
+        template = self.playlist_template_entry.text()
         example = self.generate_playlist_example_output(template)
-        self.playlist_example_output_label.configure(text=f"Preview: {example}")
+        self.playlist_example_output_label.setText(f"Preview: {example}")
 
     def insert_tag_template(self, tag):
         """Insert tag at cursor position in template entry"""
-        import tkinter as tk
-        current_pos = self.template_entry.index(tk.INSERT)
-        current_text = self.template_entry.get()
-        new_text = current_text[:current_pos] + tag + current_text[current_pos:]
-        self.template_entry.delete(0, tk.END)
-        self.template_entry.insert(0, new_text)
-        self.template_entry.icursor(current_pos + len(tag))
+        cursor_pos = self.template_entry.cursorPosition()
+        current_text = self.template_entry.text()
+        new_text = current_text[:cursor_pos] + tag + current_text[cursor_pos:]
+        self.template_entry.setText(new_text)
+        self.template_entry.setCursorPosition(cursor_pos + len(tag))
         self.update_template_example()
 
     def insert_tag_playlist_template(self, tag):
         """Insert tag at cursor position in playlist template entry"""
-        import tkinter as tk
-        current_pos = self.playlist_template_entry.index(tk.INSERT)
-        current_text = self.playlist_template_entry.get()
-        new_text = current_text[:current_pos] + tag + current_text[current_pos:]
-        self.playlist_template_entry.delete(0, tk.END)
-        self.playlist_template_entry.insert(0, new_text)
-        self.playlist_template_entry.icursor(current_pos + len(tag))
+        cursor_pos = self.playlist_template_entry.cursorPosition()
+        current_text = self.playlist_template_entry.text()
+        new_text = current_text[:cursor_pos] + tag + current_text[cursor_pos:]
+        self.playlist_template_entry.setText(new_text)
+        self.playlist_template_entry.setCursorPosition(cursor_pos + len(tag))
         self.update_playlist_template_example()
 
-    def toggle_theme(self):
-        """Toggle between light and dark theme"""
-        if self.theme_switch.get() == "dark":
-            ctk.set_appearance_mode("dark")
-        else:
-            ctk.set_appearance_mode("light")
-
-    def show_frame(self, frame_name):
-        """Show the specified frame"""
-        for name, frame in self.frames.items():
-            if name == frame_name:
-                frame.grid(row=0, column=0, sticky="nsew")
-            else:
-                frame.grid_forget()
-
-    def create_download_frame(self):
+    def create_download_tab(self):
         """Create the download tab"""
-        frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        frame.grid_columnconfigure(0, weight=1)
-        self.frames["download"] = frame
+        download_widget = QWidget()
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(download_widget)
+        self.tab_widget.addTab(scroll, "Download")
+
+        layout = QVBoxLayout(download_widget)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
 
         # Title
-        title = ctk.CTkLabel(
-            frame,
-            text="Download Music",
-            font=ctk.CTkFont(size=24, weight="bold")
-        )
-        title.grid(row=0, column=0, pady=(0, 20), sticky="w")
+        title = QLabel("Download Music")
+        title.setProperty("class", "title")
+        title_font = QFont()
+        title_font.setPointSize(24)
+        title_font.setBold(True)
+        title.setFont(title_font)
+        layout.addWidget(title)
 
         # URL Input
-        url_label = ctk.CTkLabel(frame, text="Spotify/YouTube URL or Query:")
-        url_label.grid(row=1, column=0, sticky="w", pady=(0, 5))
+        url_label = QLabel("Spotify/YouTube URL or Query:")
+        layout.addWidget(url_label)
 
         # URL input frame with paste button
-        url_input_frame = ctk.CTkFrame(frame, fg_color="transparent")
-        url_input_frame.grid(row=2, column=0, sticky="ew", pady=(0, 10))
-        url_input_frame.grid_columnconfigure(0, weight=1)
+        url_layout = QHBoxLayout()
+        self.url_entry = QLineEdit()
+        self.url_entry.setPlaceholderText("https://open.spotify.com/track/...")
+        self.url_entry.setMinimumHeight(40)
+        self.url_entry.textChanged.connect(self.update_command_preview)
+        url_layout.addWidget(self.url_entry)
 
-        self.url_entry = ctk.CTkEntry(
-            url_input_frame,
-            placeholder_text="https://open.spotify.com/track/...",
-            height=40
-        )
-        self.url_entry.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+        paste_btn = QPushButton("📋")
+        paste_btn.setFixedSize(40, 40)
+        paste_btn.clicked.connect(self.paste_url)
+        url_layout.addWidget(paste_btn)
 
-        # Paste button
-        paste_btn = ctk.CTkButton(
-            url_input_frame,
-            text="📋",
-            width=40,
-            height=40,
-            command=self.paste_url,
-            font=ctk.CTkFont(size=16)
-        )
-        paste_btn.grid(row=0, column=1)
+        layout.addLayout(url_layout)
 
         # Quick buttons
-        quick_frame = ctk.CTkFrame(frame, fg_color="transparent")
-        quick_frame.grid(row=5, column=0, sticky="ew", pady=(0, 20))
+        quick_frame = QFrame()
+        quick_layout = QHBoxLayout(quick_frame)
 
-        quick_label = ctk.CTkLabel(quick_frame, text="Quick select:")
-        quick_label.grid(row=0, column=0, padx=(0, 10))
+        quick_label = QLabel("Quick select:")
+        quick_layout.addWidget(quick_label)
 
         quick_options = [
             ("Liked Songs", "saved"),
@@ -478,545 +713,414 @@ class SpotDLGUI(ctk.CTk):
             ("Followed Artists", "all-user-followed-artists"),
         ]
 
-        for i, (label, value) in enumerate(quick_options):
-            btn = ctk.CTkButton(
-                quick_frame,
-                text=label,
-                width=120,
-                height=28,
-                command=lambda v=value: self.url_entry.insert(0, v)
-            )
-            btn.grid(row=0, column=i+1, padx=5)
+        for label_text, value in quick_options:
+            btn = QPushButton(label_text)
+            btn.setFixedHeight(28)
+            btn.clicked.connect(lambda checked, v=value: self.url_entry.setText(v))
+            quick_layout.addWidget(btn)
 
-        # Options
-        options_frame = ctk.CTkFrame(frame)
-        options_frame.grid(row=6, column=0, sticky="ew", pady=(0, 20))
-        options_frame.grid_columnconfigure((0, 1), weight=1)
+        quick_layout.addStretch()
+        layout.addWidget(quick_frame)
+
+        # Options frame
+        options_frame = QFrame()
+        options_layout = QGridLayout(options_frame)
 
         # Format
-        format_label = ctk.CTkLabel(options_frame, text="Format:")
-        format_label.grid(row=0, column=0, sticky="w", padx=10, pady=(10, 5))
+        format_label = QLabel("Format:")
+        options_layout.addWidget(format_label, 0, 0)
 
-        self.format_var = ctk.StringVar(value=self.settings.get("format", "mp3"))
-        format_menu = ctk.CTkOptionMenu(
-            options_frame,
-            variable=self.format_var,
-            values=["mp3", "flac", "ogg", "opus", "m4a", "wav"]
-        )
-        format_menu.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 10))
+        self.format_combo = QComboBox()
+        self.format_combo.addItems(["mp3", "flac", "ogg", "opus", "m4a", "wav"])
+        self.format_combo.setCurrentText(self.settings.get("format", "mp3"))
+        self.format_combo.currentTextChanged.connect(self.update_command_preview)
+        options_layout.addWidget(self.format_combo, 1, 0)
 
         # Bitrate
-        bitrate_label = ctk.CTkLabel(options_frame, text="Bitrate:")
-        bitrate_label.grid(row=0, column=1, sticky="w", padx=10, pady=(10, 5))
+        bitrate_label = QLabel("Bitrate:")
+        options_layout.addWidget(bitrate_label, 0, 1)
 
-        self.bitrate_var = ctk.StringVar(value=self.settings.get("bitrate", "320k"))
-        bitrate_menu = ctk.CTkOptionMenu(
-            options_frame,
-            variable=self.bitrate_var,
-            values=["auto", "320k", "256k", "192k", "128k", "96k"]
-        )
-        bitrate_menu.grid(row=1, column=1, sticky="ew", padx=10, pady=(0, 10))
+        self.bitrate_combo = QComboBox()
+        self.bitrate_combo.addItems(["auto", "320k", "256k", "192k", "128k", "96k"])
+        self.bitrate_combo.setCurrentText(self.settings.get("bitrate", "320k"))
+        self.bitrate_combo.currentTextChanged.connect(self.update_command_preview)
+        options_layout.addWidget(self.bitrate_combo, 1, 1)
+
+        layout.addWidget(options_frame)
 
         # Advanced options
-        advanced_frame = ctk.CTkFrame(frame)
-        advanced_frame.grid(row=7, column=0, sticky="ew", pady=(0, 20))
-        advanced_frame.grid_columnconfigure((0, 1, 2), weight=1)
+        advanced_frame = QFrame()
+        advanced_layout = QVBoxLayout(advanced_frame)
 
-        adv_label = ctk.CTkLabel(
-            advanced_frame,
-            text="Advanced Options:",
-            font=ctk.CTkFont(weight="bold")
-        )
-        adv_label.grid(row=0, column=0, columnspan=3, sticky="w", padx=10, pady=10)
+        adv_label = QLabel("Advanced Options:")
+        adv_label_font = QFont()
+        adv_label_font.setBold(True)
+        adv_label.setFont(adv_label_font)
+        advanced_layout.addWidget(adv_label)
 
-        self.preload_var = ctk.BooleanVar()
-        preload_check = ctk.CTkCheckBox(
-            advanced_frame,
-            text="Preload URLs",
-            variable=self.preload_var
-        )
-        preload_check.grid(row=1, column=0, sticky="w", padx=10, pady=5)
+        # Checkboxes in grid
+        check_grid = QGridLayout()
 
-        self.sponsor_block_var = ctk.BooleanVar()
-        sponsor_check = ctk.CTkCheckBox(
-            advanced_frame,
-            text="Skip Sponsors",
-            variable=self.sponsor_block_var
-        )
-        sponsor_check.grid(row=1, column=1, sticky="w", padx=10, pady=5)
+        self.preload_check = QCheckBox("Preload URLs")
+        self.preload_check.stateChanged.connect(self.update_command_preview)
+        check_grid.addWidget(self.preload_check, 0, 0)
 
-        self.skip_explicit_var = ctk.BooleanVar()
-        explicit_check = ctk.CTkCheckBox(
-            advanced_frame,
-            text="Skip Explicit",
-            variable=self.skip_explicit_var
-        )
-        explicit_check.grid(row=1, column=2, sticky="w", padx=10, pady=5)
+        self.sponsor_block_check = QCheckBox("Skip Sponsors")
+        self.sponsor_block_check.stateChanged.connect(self.update_command_preview)
+        check_grid.addWidget(self.sponsor_block_check, 0, 1)
 
-        self.generate_lrc_var = ctk.BooleanVar()
-        lrc_check = ctk.CTkCheckBox(
-            advanced_frame,
-            text="Generate LRC",
-            variable=self.generate_lrc_var
-        )
-        lrc_check.grid(row=2, column=0, sticky="w", padx=10, pady=5)
+        self.skip_explicit_check = QCheckBox("Skip Explicit")
+        self.skip_explicit_check.stateChanged.connect(self.update_command_preview)
+        check_grid.addWidget(self.skip_explicit_check, 0, 2)
 
-        self.playlist_numbering_var = ctk.BooleanVar()
-        numbering_check = ctk.CTkCheckBox(
-            advanced_frame,
-            text="Playlist Numbering",
-            variable=self.playlist_numbering_var
-        )
-        numbering_check.grid(row=2, column=1, sticky="w", padx=10, pady=5)
+        self.generate_lrc_check = QCheckBox("Generate LRC")
+        self.generate_lrc_check.stateChanged.connect(self.update_command_preview)
+        check_grid.addWidget(self.generate_lrc_check, 1, 0)
 
-        self.folder_per_url_var = ctk.BooleanVar(
-            value=self.settings.get("create_folder_per_url", True)
-        )
-        folder_per_url_check = ctk.CTkCheckBox(
-            advanced_frame,
-            text="Create Folder per URL",
-            variable=self.folder_per_url_var
-        )
-        folder_per_url_check.grid(row=2, column=2, sticky="w", padx=10, pady=(5, 10))
+        self.playlist_numbering_check = QCheckBox("Playlist Numbering")
+        self.playlist_numbering_check.stateChanged.connect(self.update_command_preview)
+        check_grid.addWidget(self.playlist_numbering_check, 1, 1)
 
-        # Buttons frame
-        buttons_frame = ctk.CTkFrame(frame, fg_color="transparent")
-        buttons_frame.grid(row=8, column=0, sticky="ew", pady=(0, 15))
-        buttons_frame.grid_columnconfigure(0, weight=3)
-        buttons_frame.grid_columnconfigure(1, weight=1)
+        self.folder_per_url_check = QCheckBox("Create Folder per URL")
+        self.folder_per_url_check.setChecked(self.settings.get("create_folder_per_url", True))
+        self.folder_per_url_check.stateChanged.connect(self.update_command_preview)
+        check_grid.addWidget(self.folder_per_url_check, 1, 2)
 
-        # Download button
-        self.download_btn = ctk.CTkButton(
-            buttons_frame,
-            text="⬇️ Download",
-            height=50,
-            font=ctk.CTkFont(size=16, weight="bold"),
-            command=self.start_download
-        )
-        self.download_btn.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+        advanced_layout.addLayout(check_grid)
+        layout.addWidget(advanced_frame)
 
-        # Open folder button
-        self.open_folder_btn = ctk.CTkButton(
-            buttons_frame,
-            text="📁 Open Folder",
-            height=50,
-            font=ctk.CTkFont(size=14, weight="bold"),
-            command=self.open_download_folder,
-            fg_color="gray40",
-            hover_color="gray30"
-        )
-        self.open_folder_btn.grid(row=0, column=1, sticky="ew", padx=(5, 0))
+        # Buttons
+        buttons_layout = QHBoxLayout()
 
-        # Command preview section
-        command_preview_label = ctk.CTkLabel(
-            frame,
-            text="Command Preview:",
-            font=ctk.CTkFont(size=11, weight="bold")
-        )
-        command_preview_label.grid(row=9, column=0, sticky="w", pady=(0, 5))
+        self.download_btn = QPushButton("⬇️ Download")
+        self.download_btn.setMinimumHeight(50)
+        download_font = QFont()
+        download_font.setPointSize(14)
+        download_font.setBold(True)
+        self.download_btn.setFont(download_font)
+        self.download_btn.clicked.connect(self.start_download)
+        buttons_layout.addWidget(self.download_btn, 3)
 
-        # Command preview frame with copy button
-        command_frame = ctk.CTkFrame(frame, fg_color="transparent")
-        command_frame.grid(row=10, column=0, sticky="ew")
-        command_frame.grid_columnconfigure(0, weight=1)
+        self.open_folder_btn = QPushButton("📁 Open Folder")
+        self.open_folder_btn.setMinimumHeight(50)
+        self.open_folder_btn.setFont(download_font)
+        self.open_folder_btn.setProperty("class", "secondary")
+        self.open_folder_btn.setStyleSheet("background-color: #424242;")
+        self.open_folder_btn.clicked.connect(self.open_download_folder)
+        buttons_layout.addWidget(self.open_folder_btn, 1)
 
-        self.command_entry = ctk.CTkEntry(
-            command_frame,
-            placeholder_text="Command will appear here...",
-            height=35,
-            state="readonly",
-            font=ctk.CTkFont(family="Consolas", size=10)
-        )
-        self.command_entry.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+        layout.addLayout(buttons_layout)
 
-        # Copy button
-        copy_btn = ctk.CTkButton(
-            command_frame,
-            text="📄",
-            width=35,
-            height=35,
-            command=self.copy_command,
-            font=ctk.CTkFont(size=14)
-        )
-        copy_btn.grid(row=0, column=1)
+        # Command preview
+        command_preview_label = QLabel("Command Preview:")
+        command_font = QFont()
+        command_font.setPointSize(10)
+        command_font.setBold(True)
+        command_preview_label.setFont(command_font)
+        layout.addWidget(command_preview_label)
 
-        # Update command preview when URL changes
-        self.url_entry.bind("<KeyRelease>", lambda e: self.update_command_preview())
+        command_layout = QHBoxLayout()
 
-        # Bind download frame variables
-        self.format_var.trace_add("write", lambda *args: self.update_command_preview())
-        self.bitrate_var.trace_add("write", lambda *args: self.update_command_preview())
-        self.preload_var.trace_add("write", lambda *args: self.update_command_preview())
-        self.sponsor_block_var.trace_add("write", lambda *args: self.update_command_preview())
-        self.skip_explicit_var.trace_add("write", lambda *args: self.update_command_preview())
-        self.generate_lrc_var.trace_add("write", lambda *args: self.update_command_preview())
-        self.playlist_numbering_var.trace_add("write", lambda *args: self.update_command_preview())
-        self.folder_per_url_var.trace_add("write", lambda *args: self.update_command_preview())
+        self.command_entry = QLineEdit()
+        self.command_entry.setPlaceholderText("Command will appear here...")
+        self.command_entry.setReadOnly(True)
+        command_entry_font = QFont("Consolas", 9)
+        self.command_entry.setFont(command_entry_font)
+        self.command_entry.setMinimumHeight(35)
+        command_layout.addWidget(self.command_entry)
 
-    def create_queue_frame(self):
+        copy_btn = QPushButton("📄")
+        copy_btn.setFixedSize(35, 35)
+        copy_btn.clicked.connect(self.copy_command)
+        command_layout.addWidget(copy_btn)
+
+        layout.addLayout(command_layout)
+
+        layout.addStretch()
+
+    def create_queue_tab(self):
         """Create the queue tab"""
-        frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        frame.grid_columnconfigure(0, weight=1)
-        frame.grid_rowconfigure(1, weight=1)
-        self.frames["queue"] = frame
+        queue_widget = QWidget()
+        layout = QVBoxLayout(queue_widget)
+        layout.setContentsMargins(20, 20, 20, 20)
 
-        # Title
-        header_frame = ctk.CTkFrame(frame, fg_color="transparent")
-        header_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
-        header_frame.grid_columnconfigure(0, weight=1)
+        # Header
+        header_layout = QHBoxLayout()
 
-        title = ctk.CTkLabel(
-            header_frame,
-            text="Download Queue & Output",
-            font=ctk.CTkFont(size=24, weight="bold")
-        )
-        title.grid(row=0, column=0, sticky="w")
+        title = QLabel("Download Queue & Output")
+        title_font = QFont()
+        title_font.setPointSize(24)
+        title_font.setBold(True)
+        title.setFont(title_font)
+        header_layout.addWidget(title)
 
-        # Clear button
-        clear_btn = ctk.CTkButton(
-            header_frame,
-            text="Clear Queue",
-            width=120,
-            command=self.clear_queue
-        )
-        clear_btn.grid(row=0, column=1, padx=(10, 0))
+        header_layout.addStretch()
 
-        # Queue list (now with real-time output)
-        self.queue_textbox = ctk.CTkTextbox(
-            frame,
-            state="disabled",
-            font=ctk.CTkFont(family="Consolas", size=11)
-        )
-        self.queue_textbox.grid(row=1, column=0, sticky="nsew")
+        clear_btn = QPushButton("Clear Queue")
+        clear_btn.setFixedWidth(120)
+        clear_btn.clicked.connect(self.clear_queue)
+        header_layout.addWidget(clear_btn)
 
-    def create_settings_frame(self):
+        layout.addLayout(header_layout)
+
+        # Queue textbox
+        self.queue_textbox = QTextEdit()
+        self.queue_textbox.setReadOnly(True)
+        queue_font = QFont("Consolas", 10)
+        self.queue_textbox.setFont(queue_font)
+        layout.addWidget(self.queue_textbox)
+
+        # Setup thread-safe logger
+        self.logger = ThreadSafeLogger(self.queue_textbox)
+
+        self.tab_widget.addTab(queue_widget, "Queue")
+
+    def create_settings_tab(self):
         """Create the settings tab"""
-        frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        frame.grid_columnconfigure(0, weight=1)
-        self.frames["settings"] = frame
+        settings_widget = QWidget()
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(settings_widget)
+        self.tab_widget.addTab(scroll, "Settings")
+
+        layout = QVBoxLayout(settings_widget)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
 
         # Title
-        title = ctk.CTkLabel(
-            frame,
-            text="Settings",
-            font=ctk.CTkFont(size=24, weight="bold")
-        )
-        title.grid(row=0, column=0, pady=(0, 20), sticky="w")
+        title = QLabel("Settings")
+        title_font = QFont()
+        title_font.setPointSize(24)
+        title_font.setBold(True)
+        title.setFont(title_font)
+        layout.addWidget(title)
 
         # Download folder
-        folder_frame = ctk.CTkFrame(frame)
-        folder_frame.grid(row=1, column=0, sticky="ew", pady=(0, 20))
-        folder_frame.grid_columnconfigure(1, weight=1)
+        folder_frame = QFrame()
+        folder_layout = QVBoxLayout(folder_frame)
 
-        folder_label = ctk.CTkLabel(
-            folder_frame,
-            text="Base Download Folder:",
-            font=ctk.CTkFont(weight="bold")
-        )
-        folder_label.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w", columnspan=3)
+        folder_label = QLabel("Base Download Folder:")
+        folder_label_font = QFont()
+        folder_label_font.setBold(True)
+        folder_label.setFont(folder_label_font)
+        folder_layout.addWidget(folder_label)
 
-        folder_label2 = ctk.CTkLabel(folder_frame, text="Folder:")
-        folder_label2.grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        folder_input_layout = QHBoxLayout()
 
-        self.folder_entry = ctk.CTkEntry(folder_frame)
-        self.folder_entry.insert(0, self.settings.get("download_folder", str(Path.home() / "Music")))
-        self.folder_entry.grid(row=1, column=1, padx=10, pady=5, sticky="ew")
+        folder_label2 = QLabel("Folder:")
+        folder_input_layout.addWidget(folder_label2)
 
-        browse_btn = ctk.CTkButton(
-            folder_frame,
-            text="Browse",
-            width=100,
-            command=self.browse_folder
-        )
-        browse_btn.grid(row=1, column=2, padx=10, pady=5)
+        self.folder_entry = QLineEdit()
+        self.folder_entry.setText(self.settings.get("download_folder", str(Path.home() / "Music")))
+        folder_input_layout.addWidget(self.folder_entry)
 
-        open_folder_btn = ctk.CTkButton(
-            folder_frame,
-            text="📁 Open Folder",
-            width=100,
-            command=self.open_download_folder,
-            fg_color="gray40",
-            hover_color="gray30"
-        )
-        open_folder_btn.grid(row=1, column=3, padx=(0, 10), pady=5)
+        browse_btn = QPushButton("Browse")
+        browse_btn.setFixedWidth(100)
+        browse_btn.clicked.connect(self.browse_folder)
+        folder_input_layout.addWidget(browse_btn)
+
+        open_folder_btn = QPushButton("📁 Open Folder")
+        open_folder_btn.setFixedWidth(120)
+        open_folder_btn.setStyleSheet("background-color: #424242;")
+        open_folder_btn.clicked.connect(self.open_download_folder)
+        folder_input_layout.addWidget(open_folder_btn)
+
+        folder_layout.addLayout(folder_input_layout)
+        layout.addWidget(folder_frame)
 
         # Output template (Song File Template)
-        template_frame = ctk.CTkFrame(frame)
-        template_frame.grid(row=2, column=0, sticky="ew", pady=(0, 20))
-        template_frame.grid_columnconfigure(0, weight=1)
+        template_frame = QFrame()
+        template_layout = QVBoxLayout(template_frame)
 
-        template_label = ctk.CTkLabel(
-            template_frame,
-            text="Song File Template (folders + filename):",
-            font=ctk.CTkFont(weight="bold")
-        )
-        template_label.grid(row=0, column=0, sticky="w", padx=10, pady=(10, 5))
+        template_label = QLabel("Song File Template (folders + filename):")
+        template_label_font = QFont()
+        template_label_font.setBold(True)
+        template_label.setFont(template_label_font)
+        template_layout.addWidget(template_label)
 
-        template_help = ctk.CTkLabel(
-            template_frame,
-            text="Controls the folder structure AND song filenames. Use / to create folders.",
-            font=ctk.CTkFont(size=10),
-            text_color="gray"
-        )
-        template_help.grid(row=1, column=0, sticky="w", padx=10, pady=(0, 5))
+        template_help = QLabel("Controls the folder structure AND song filenames. Use / to create folders.")
+        template_help.setStyleSheet("color: #999999; font-size: 9pt;")
+        template_layout.addWidget(template_help)
 
-        self.template_entry = ctk.CTkEntry(template_frame)
-        self.template_entry.insert(0, self.settings.get("output", "{album-artist}/{year} - {album}/{track-number} - {title}.{output-ext}"))
-        self.template_entry.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 5))
+        self.template_entry = QLineEdit()
+        self.template_entry.setText(self.settings.get("output", "{album-artist}/{year} - {album}/{track-number} - {title}.{output-ext}"))
+        self.template_entry.textChanged.connect(self.update_template_example)
+        self.template_entry.textChanged.connect(self.update_command_preview)
+        template_layout.addWidget(self.template_entry)
 
-        # Bind the entry to update preview in real-time
-        def update_both_previews(event):
-            self.update_template_example(event)
-            self.update_command_preview()
+        # Example output
+        initial_example = self.generate_example_output(self.template_entry.text())
+        self.example_output_label = QLabel(f"Preview: {initial_example}")
+        self.example_output_label.setStyleSheet("color: #4CAF50; font-size: 9pt;")
+        template_layout.addWidget(self.example_output_label)
 
-        self.template_entry.bind("<KeyRelease>", update_both_previews)
+        # Clickable tags
+        template_tags_label = QLabel("Click to insert:")
+        template_tags_label.setStyleSheet("color: #999999; font-size: 9pt;")
+        template_layout.addWidget(template_tags_label)
 
-        # Dynamic example output label
-        initial_example = self.generate_example_output(self.template_entry.get())
-        self.example_output_label = ctk.CTkLabel(
-            template_frame,
-            text=f"Preview: {initial_example}",
-            text_color="#4CAF50",
-            font=ctk.CTkFont(size=10)
-        )
-        self.example_output_label.grid(row=3, column=0, sticky="w", padx=20, pady=(0, 5))
+        template_tags_widget = QWidget()
+        template_tags_layout = QGridLayout(template_tags_widget)
+        template_tags_layout.setSpacing(4)
 
-        # Clickable tags for song template
-        template_tags_label = ctk.CTkLabel(
-            template_frame,
-            text="Click to insert:",
-            font=ctk.CTkFont(size=9),
-            text_color="gray"
-        )
-        template_tags_label.grid(row=4, column=0, padx=10, pady=(5, 2), sticky="w")
-
-        template_tags_frame = ctk.CTkFrame(template_frame, fg_color="transparent")
-        template_tags_frame.grid(row=5, column=0, padx=10, pady=(0, 10), sticky="ew")
-
-        # Sort tags alphabetically
         song_tags = sorted([
             "{album}", "{album-artist}", "{artist}", "{artists}",
             "{disc-number}", "{genre}", "{isrc}", "{output-ext}",
             "{publisher}", "{title}", "{track-number}", "{year}"
         ])
 
-        # Use 6 columns to spread horizontally
         for i, tag in enumerate(song_tags):
-            tag_btn = ctk.CTkButton(
-                template_tags_frame,
-                text=tag,
-                width=100,
-                height=24,
-                font=ctk.CTkFont(size=9),
-                fg_color="gray30",
-                hover_color="gray20",
-                command=lambda t=tag: self.insert_tag_template(t)
-            )
-            tag_btn.grid(row=i//6, column=i%6, padx=2, pady=2)
+            tag_btn = QPushButton(tag)
+            tag_btn.setFixedHeight(24)
+            tag_btn.setStyleSheet("background-color: #2b2b2b; font-size: 9pt;")
+            tag_btn.clicked.connect(lambda checked, t=tag: self.insert_tag_template(t))
+            template_tags_layout.addWidget(tag_btn, i // 6, i % 6)
+
+        template_layout.addWidget(template_tags_widget)
+        layout.addWidget(template_frame)
 
         # Playlist template
-        playlist_template_frame = ctk.CTkFrame(frame)
-        playlist_template_frame.grid(row=3, column=0, sticky="ew", pady=(0, 20))
-        playlist_template_frame.grid_columnconfigure(0, weight=1)
+        playlist_template_frame = QFrame()
+        playlist_template_layout = QVBoxLayout(playlist_template_frame)
 
-        playlist_template_label = ctk.CTkLabel(
-            playlist_template_frame,
-            text="Playlist Template (for playlists only):",
-            font=ctk.CTkFont(weight="bold")
-        )
-        playlist_template_label.grid(row=0, column=0, sticky="w", padx=10, pady=(10, 5))
+        playlist_template_label = QLabel("Playlist Template (for playlists only):")
+        playlist_template_label_font = QFont()
+        playlist_template_label_font.setBold(True)
+        playlist_template_label.setFont(playlist_template_label_font)
+        playlist_template_layout.addWidget(playlist_template_label)
 
-        playlist_template_help = ctk.CTkLabel(
-            playlist_template_frame,
-            text="Used automatically when downloading playlists. Use {list-name}, {list-position} for playlist-specific variables.",
-            font=ctk.CTkFont(size=10),
-            text_color="gray"
-        )
-        playlist_template_help.grid(row=1, column=0, sticky="w", padx=10, pady=(0, 5))
+        playlist_template_help = QLabel("Used automatically when downloading playlists. Use {list-name}, {list-position} for playlist-specific variables.")
+        playlist_template_help.setStyleSheet("color: #999999; font-size: 9pt;")
+        playlist_template_layout.addWidget(playlist_template_help)
 
-        self.playlist_template_entry = ctk.CTkEntry(playlist_template_frame)
-        self.playlist_template_entry.insert(0, self.settings.get("playlist_output", "{list-name}/{list-position} - {artists} - {title}.{output-ext}"))
-        self.playlist_template_entry.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 5))
+        self.playlist_template_entry = QLineEdit()
+        self.playlist_template_entry.setText(self.settings.get("playlist_output", "{list-name}/{list-position} - {artists} - {title}.{output-ext}"))
+        self.playlist_template_entry.textChanged.connect(self.update_playlist_template_example)
+        self.playlist_template_entry.textChanged.connect(self.update_command_preview)
+        playlist_template_layout.addWidget(self.playlist_template_entry)
 
-        # Bind the entry to update preview in real-time
-        def update_playlist_previews(event):
-            self.update_playlist_template_example(event)
-            self.update_command_preview()
+        # Example output
+        initial_playlist_example = self.generate_playlist_example_output(self.playlist_template_entry.text())
+        self.playlist_example_output_label = QLabel(f"Preview: {initial_playlist_example}")
+        self.playlist_example_output_label.setStyleSheet("color: #4CAF50; font-size: 9pt;")
+        playlist_template_layout.addWidget(self.playlist_example_output_label)
 
-        self.playlist_template_entry.bind("<KeyRelease>", update_playlist_previews)
+        # Clickable tags
+        playlist_tags_label = QLabel("Click to insert:")
+        playlist_tags_label.setStyleSheet("color: #999999; font-size: 9pt;")
+        playlist_template_layout.addWidget(playlist_tags_label)
 
-        # Dynamic example output label for playlist
-        initial_playlist_example = self.generate_playlist_example_output(self.playlist_template_entry.get())
-        self.playlist_example_output_label = ctk.CTkLabel(
-            playlist_template_frame,
-            text=f"Preview: {initial_playlist_example}",
-            text_color="#4CAF50",
-            font=ctk.CTkFont(size=10)
-        )
-        self.playlist_example_output_label.grid(row=3, column=0, sticky="w", padx=20, pady=(0, 5))
+        playlist_tags_widget = QWidget()
+        playlist_tags_layout = QGridLayout(playlist_tags_widget)
+        playlist_tags_layout.setSpacing(4)
 
-        # Clickable tags for playlist template
-        playlist_tags_label = ctk.CTkLabel(
-            playlist_template_frame,
-            text="Click to insert:",
-            font=ctk.CTkFont(size=9),
-            text_color="gray"
-        )
-        playlist_tags_label.grid(row=4, column=0, padx=10, pady=(5, 2), sticky="w")
-
-        playlist_tags_frame = ctk.CTkFrame(playlist_template_frame, fg_color="transparent")
-        playlist_tags_frame.grid(row=5, column=0, padx=10, pady=(0, 10), sticky="ew")
-
-        # Sort tags alphabetically
         playlist_tags = sorted([
             "{album}", "{artist}", "{artists}", "{genre}",
             "{list-length}", "{list-name}", "{list-position}",
             "{output-ext}", "{title}", "{year}"
         ])
 
-        # Use 6 columns to spread horizontally
         for i, tag in enumerate(playlist_tags):
-            tag_btn = ctk.CTkButton(
-                playlist_tags_frame,
-                text=tag,
-                width=100,
-                height=24,
-                font=ctk.CTkFont(size=9),
-                fg_color="gray30",
-                hover_color="gray20",
-                command=lambda t=tag: self.insert_tag_playlist_template(t)
-            )
-            tag_btn.grid(row=i//6, column=i%6, padx=2, pady=2)
+            tag_btn = QPushButton(tag)
+            tag_btn.setFixedHeight(24)
+            tag_btn.setStyleSheet("background-color: #2b2b2b; font-size: 9pt;")
+            tag_btn.clicked.connect(lambda checked, t=tag: self.insert_tag_playlist_template(t))
+            playlist_tags_layout.addWidget(tag_btn, i // 6, i % 6)
+
+        playlist_template_layout.addWidget(playlist_tags_widget)
+        layout.addWidget(playlist_template_frame)
 
         # Threads
-        threads_frame = ctk.CTkFrame(frame)
-        threads_frame.grid(row=4, column=0, sticky="ew", pady=(0, 20))
+        threads_frame = QFrame()
+        threads_layout = QHBoxLayout(threads_frame)
 
-        threads_label = ctk.CTkLabel(threads_frame, text="Concurrent Downloads:")
-        threads_label.grid(row=0, column=0, padx=10, pady=10, sticky="w")
+        threads_label = QLabel("Concurrent Downloads:")
+        threads_layout.addWidget(threads_label)
 
-        self.threads_var = ctk.StringVar(value=self.settings.get("threads", "4"))
-        threads_slider = ctk.CTkSlider(
-            threads_frame,
-            from_=1,
-            to=16,
-            number_of_steps=15,
-            command=lambda v: self.threads_var.set(str(int(v)))
-        )
-        threads_slider.set(int(self.settings.get("threads", "4")))
-        threads_slider.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
+        self.threads_slider = QSlider(Qt.Horizontal)
+        self.threads_slider.setMinimum(1)
+        self.threads_slider.setMaximum(16)
+        self.threads_slider.setValue(int(self.settings.get("threads", "4")))
+        self.threads_slider.valueChanged.connect(self.update_threads_label)
+        self.threads_slider.valueChanged.connect(self.update_command_preview)
+        threads_layout.addWidget(self.threads_slider)
 
-        threads_value = ctk.CTkLabel(threads_frame, textvariable=self.threads_var)
-        threads_value.grid(row=0, column=2, padx=10, pady=10)
+        self.threads_value_label = QLabel(str(self.threads_slider.value()))
+        threads_layout.addWidget(self.threads_value_label)
 
-        # Bind threads_var to update command preview
-        self.threads_var.trace_add("write", lambda *args: self.update_command_preview())
+        layout.addWidget(threads_frame)
 
         # Save settings button
-        save_btn = ctk.CTkButton(
-            frame,
-            text="💾 Save Settings",
-            height=40,
-            font=ctk.CTkFont(size=14, weight="bold"),
-            command=self.save_settings
-        )
-        save_btn.grid(row=5, column=0, sticky="ew", pady=(0, 10))
+        save_btn = QPushButton("💾 Save Settings")
+        save_btn.setMinimumHeight(40)
+        save_font = QFont()
+        save_font.setPointSize(12)
+        save_font.setBold(True)
+        save_btn.setFont(save_font)
+        save_btn.clicked.connect(self.save_settings)
+        layout.addWidget(save_btn)
 
         # Config file location
-        config_label = ctk.CTkLabel(
-            frame,
-            text=f"Config saved to: {self.config_file}",
-            text_color="gray",
-            font=ctk.CTkFont(size=10)
-        )
-        config_label.grid(row=6, column=0, sticky="w")
-
-        # Theme settings
-        theme_frame = ctk.CTkFrame(frame)
-        theme_frame.grid(row=7, column=0, sticky="ew", pady=(20, 0))
-        theme_frame.grid_columnconfigure(0, weight=1)
-
-        theme_label = ctk.CTkLabel(
-            theme_frame,
-            text="Appearance:",
-            font=ctk.CTkFont(weight="bold")
-        )
-        theme_label.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
-
-        self.theme_switch = ctk.CTkSwitch(
-            theme_frame,
-            text="Dark Mode",
-            command=self.toggle_theme,
-            onvalue="dark",
-            offvalue="light"
-        )
-        self.theme_switch.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="w")
-
-        # Set initial state based on settings
-        if self.settings.get("theme", "dark") == "dark":
-            self.theme_switch.select()
-        else:
-            self.theme_switch.deselect()
+        config_label = QLabel(f"Config saved to: {self.config_file}")
+        config_label.setStyleSheet("color: #999999; font-size: 9pt;")
+        layout.addWidget(config_label)
 
         # SpotDL installation check
-        spotdl_frame = ctk.CTkFrame(frame)
-        spotdl_frame.grid(row=8, column=0, sticky="ew", pady=(20, 0))
-        spotdl_frame.grid_columnconfigure(0, weight=1)
+        spotdl_frame = QFrame()
+        spotdl_layout = QVBoxLayout(spotdl_frame)
 
-        spotdl_label = ctk.CTkLabel(
-            spotdl_frame,
-            text="SpotDL Installation:",
-            font=ctk.CTkFont(weight="bold")
-        )
-        spotdl_label.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
+        spotdl_label = QLabel("SpotDL Installation:")
+        spotdl_label_font = QFont()
+        spotdl_label_font.setBold(True)
+        spotdl_label.setFont(spotdl_label_font)
+        spotdl_layout.addWidget(spotdl_label)
 
         # Status label
-        self.spotdl_status_label = ctk.CTkLabel(
-            spotdl_frame,
-            text="Checking...",
-            text_color="gray",
-            font=ctk.CTkFont(size=11)
-        )
-        self.spotdl_status_label.grid(row=1, column=0, padx=10, pady=(0, 5), sticky="w")
+        self.spotdl_status_label = QLabel("Checking...")
+        self.spotdl_status_label.setStyleSheet("color: #999999; font-size: 10pt;")
+        spotdl_layout.addWidget(self.spotdl_status_label)
 
-        # Buttons frame
-        spotdl_buttons_frame = ctk.CTkFrame(spotdl_frame, fg_color="transparent")
-        spotdl_buttons_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
+        # Buttons
+        spotdl_buttons_layout = QHBoxLayout()
 
-        check_spotdl_btn = ctk.CTkButton(
-            spotdl_buttons_frame,
-            text="Check Installation",
-            width=150,
-            command=self.check_spotdl_installation
-        )
-        check_spotdl_btn.grid(row=0, column=0, padx=(0, 5))
+        check_spotdl_btn = QPushButton("Check Installation")
+        check_spotdl_btn.setFixedWidth(150)
+        check_spotdl_btn.clicked.connect(self.check_spotdl_installation)
+        spotdl_buttons_layout.addWidget(check_spotdl_btn)
 
-        install_spotdl_btn = ctk.CTkButton(
-            spotdl_buttons_frame,
-            text="Install SpotDL",
-            width=150,
-            command=self.install_spotdl,
-            fg_color="#4CAF50",
-            hover_color="#45a049"
-        )
-        install_spotdl_btn.grid(row=0, column=1, padx=5)
+        install_spotdl_btn = QPushButton("Install SpotDL")
+        install_spotdl_btn.setFixedWidth(150)
+        install_spotdl_btn.setStyleSheet("background-color: #4CAF50;")
+        install_spotdl_btn.clicked.connect(self.install_spotdl)
+        spotdl_buttons_layout.addWidget(install_spotdl_btn)
+
+        spotdl_buttons_layout.addStretch()
+
+        spotdl_layout.addLayout(spotdl_buttons_layout)
+        layout.addWidget(spotdl_frame)
 
         # Initial check
         self.check_spotdl_installation()
 
+        layout.addStretch()
+
+    def update_threads_label(self, value):
+        """Update threads value label"""
+        self.threads_value_label.setText(str(value))
+
     def browse_folder(self):
         """Browse for download folder"""
-        folder = filedialog.askdirectory()
+        folder = QFileDialog.getExistingDirectory(self, "Select Download Folder")
         if folder:
-            self.folder_entry.delete(0, "end")
-            self.folder_entry.insert(0, folder)
+            self.folder_entry.setText(folder)
 
     def open_download_folder(self):
         """Open the download folder in system file explorer"""
-        folder = self.folder_entry.get()
+        folder = self.folder_entry.text()
 
         if not os.path.exists(folder):
-            messagebox.showwarning(
+            QMessageBox.warning(
+                self,
                 "Folder Not Found",
                 f"The folder doesn't exist yet:\n{folder}\n\nIt will be created when you download something."
             )
@@ -1033,120 +1137,102 @@ class SpotDLGUI(ctk.CTk):
             else:
                 subprocess.run(["xdg-open", folder])
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to open folder:\n{str(e)}")
+            QMessageBox.critical(self, "Error", f"Failed to open folder:\n{str(e)}")
 
     def paste_url(self):
         """Paste from clipboard into URL entry"""
-        try:
-            clipboard_text = self.clipboard_get()
-            self.url_entry.delete(0, "end")
-            self.url_entry.insert(0, clipboard_text)
+        clipboard = QApplication.clipboard()
+        text = clipboard.text()
+        if text:
+            self.url_entry.setText(text)
             self.update_command_preview()
-        except:
-            pass  # Clipboard empty or inaccessible
 
     def copy_command(self):
         """Copy command preview to clipboard"""
-        command = self.command_entry.get()
+        command = self.command_entry.text()
         if command and command != "Command will appear here...":
             try:
-                self.clipboard_clear()
-                self.clipboard_append(command)
+                clipboard = QApplication.clipboard()
+                clipboard.setText(command)
+
                 # Visual feedback
-                self.command_entry.configure(state="normal")
-                temp_value = self.command_entry.get()
-                self.command_entry.delete(0, "end")
-                self.command_entry.insert(0, temp_value + " ✓")
-                self.command_entry.configure(state="readonly")
+                original_text = command
+                self.command_entry.setText(command + " ✓")
 
                 # Reset after 1 second
-                def reset():
-                    self.command_entry.configure(state="normal")
-                    self.command_entry.delete(0, "end")
-                    self.command_entry.insert(0, temp_value)
-                    self.command_entry.configure(state="readonly")
-
-                self.after(1000, reset)
+                QTimer.singleShot(1000, lambda: self.command_entry.setText(original_text))
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to copy to clipboard:\n{str(e)}")
+                QMessageBox.critical(self, "Error", f"Failed to copy to clipboard:\n{str(e)}")
 
     def update_command_preview(self):
         """Update the command preview field with current settings"""
-        query = self.url_entry.get().strip()
+        query = self.url_entry.text().strip()
 
         if not query:
-            self.command_entry.configure(state="normal")
-            self.command_entry.delete(0, "end")
-            self.command_entry.configure(placeholder_text="Command will appear here...")
-            self.command_entry.configure(state="readonly")
+            self.command_entry.setText("")
+            self.command_entry.setPlaceholderText("Command will appear here...")
             return
 
         # Build command exactly as it will be executed
         cmd_parts = ["spotdl", query]
 
         # Add options
-        cmd_parts.extend(["--format", self.format_var.get()])
-        cmd_parts.extend(["--bitrate", self.bitrate_var.get()])
-        cmd_parts.extend(["--threads", self.threads_var.get()])
+        cmd_parts.extend(["--format", self.format_combo.currentText()])
+        cmd_parts.extend(["--bitrate", self.bitrate_combo.currentText()])
+        cmd_parts.extend(["--threads", str(self.threads_slider.value())])
 
         # Automatically select the correct template based on URL type
         is_playlist_url = self.is_playlist(query)
         if is_playlist_url:
-            template = self.settings.get("playlist_output", "{list-name}/{list-position} - {artists} - {title}.{output-ext}")
+            template = self.playlist_template_entry.text()
         else:
-            template = self.settings.get("output", "{album-artist}/{year} - {album}/{track-number} - {title}.{output-ext}")
+            template = self.template_entry.text()
 
         cmd_parts.extend(["--output", template])
 
         # Add flags
-        if self.preload_var.get():
+        if self.preload_check.isChecked():
             cmd_parts.append("--preload")
-        if self.sponsor_block_var.get():
+        if self.sponsor_block_check.isChecked():
             cmd_parts.append("--sponsor-block")
-        if self.skip_explicit_var.get():
+        if self.skip_explicit_check.isChecked():
             cmd_parts.append("--skip-explicit")
-        if self.generate_lrc_var.get():
+        if self.generate_lrc_check.isChecked():
             cmd_parts.append("--generate-lrc")
-        if self.playlist_numbering_var.get():
+        if self.playlist_numbering_check.isChecked():
             cmd_parts.append("--playlist-numbering")
 
         # Build command string
         command = " ".join(cmd_parts)
 
         # Update entry
-        self.command_entry.configure(state="normal")
-        self.command_entry.delete(0, "end")
-        self.command_entry.insert(0, command)
-        self.command_entry.configure(state="readonly")
+        self.command_entry.setText(command)
 
     def log_to_queue(self, message):
-        """Add a message to the queue display"""
-        self.queue_textbox.configure(state="normal")
-        self.queue_textbox.insert("end", message)
-        self.queue_textbox.configure(state="disabled")
-        self.queue_textbox.see("end")
+        """Thread-safe logging to queue"""
+        self.logger.log(message)
 
     def start_download(self):
         """Start a download"""
-        query = self.url_entry.get().strip()
+        query = self.url_entry.text().strip()
 
         if not query:
-            messagebox.showwarning("No URL", "Please enter a Spotify or YouTube URL")
+            QMessageBox.warning(self, "No URL", "Please enter a Spotify or YouTube URL")
             return
 
         # Get settings (before switching to queue tab)
-        format_val = self.format_var.get()
-        bitrate_val = self.bitrate_var.get()
-        threads_val = self.threads_var.get()
-        download_folder = self.folder_entry.get()
-        folder_per_url = self.folder_per_url_var.get()
+        format_val = self.format_combo.currentText()
+        bitrate_val = self.bitrate_combo.currentText()
+        threads_val = str(self.threads_slider.value())
+        download_folder = self.folder_entry.text()
+        folder_per_url = self.folder_per_url_check.isChecked()
 
         # Get flags
-        preload = self.preload_var.get()
-        sponsor_block = self.sponsor_block_var.get()
-        skip_explicit = self.skip_explicit_var.get()
-        generate_lrc = self.generate_lrc_var.get()
-        playlist_numbering = self.playlist_numbering_var.get()
+        preload = self.preload_check.isChecked()
+        sponsor_block = self.sponsor_block_check.isChecked()
+        skip_explicit = self.skip_explicit_check.isChecked()
+        generate_lrc = self.generate_lrc_check.isChecked()
+        playlist_numbering = self.playlist_numbering_check.isChecked()
 
         # Check content type quickly (doesn't require network)
         is_playlist_url = self.is_playlist(query)
@@ -1155,10 +1241,10 @@ class SpotDLGUI(ctk.CTk):
 
         # Automatically select the correct template based on URL type
         if is_playlist_url:
-            template_val = self.playlist_template_entry.get()
+            template_val = self.playlist_template_entry.text()
             self.log_to_queue(f"🎼 Using playlist template\n")
         else:
-            template_val = self.template_entry.get()
+            template_val = self.template_entry.text()
             if is_album_url:
                 self.log_to_queue(f"💿 Using album/track template\n")
 
@@ -1181,10 +1267,10 @@ class SpotDLGUI(ctk.CTk):
         self.log_to_queue(f"Query: {query}\n")
 
         # Clear URL input
-        self.url_entry.delete(0, "end")
+        self.url_entry.clear()
 
         # Switch to queue tab immediately (no UI freeze!)
-        self.show_frame("queue")
+        self.tab_widget.setCurrentIndex(1)
 
         # Start download preparation and execution in background thread
         threading.Thread(
@@ -1382,14 +1468,21 @@ class SpotDLGUI(ctk.CTk):
 
     def clear_queue(self):
         """Clear the queue display"""
-        self.queue_textbox.configure(state="normal")
-        self.queue_textbox.delete("1.0", "end")
-        self.queue_textbox.configure(state="disabled")
+        self.queue_textbox.clear()
 
 
 def main():
-    app = SpotDLGUI()
-    app.mainloop()
+    app = QApplication(sys.argv)
+
+    # Set application properties
+    app.setApplicationName("SpotDL GUI")
+    app.setOrganizationName("SpotDL")
+
+    # Create and show main window
+    window = SpotDLGUI()
+    window.show()
+
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":

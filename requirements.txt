@@ -1,2 +1,10 @@
-# Desktop GUI only
-customtkinter==5.2.2
+# PySide6 GUI Framework
+PySide6>=6.6.0
+
+# SpotDL for music downloading (optional - can also use standalone)
+# spotdl>=4.2.0
+
+# Note: The app works with:
+# 1. spotdl source code in ./spotdl/ folder (current setup)
+# 2. pip install spotdl (system-wide)
+# 3. spotdl.exe standalone executable

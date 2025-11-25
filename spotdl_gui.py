@@ -63,6 +63,7 @@ class SpotDLGUI(QMainWindow):
     update_metadata_signal = Signal(str, dict)  # queue_id, metadata
     update_progress_signal = Signal(str, int)   # queue_id, progress
     update_current_song_signal = Signal(str, str)  # queue_id, current_song_name
+    update_song_count_signal = Signal(str, int, int)  # queue_id, completed, total
 
     def __init__(self):
         super().__init__()
@@ -147,6 +148,7 @@ class SpotDLGUI(QMainWindow):
         self.update_metadata_signal.connect(self.update_queue_card_metadata)
         self.update_progress_signal.connect(self.update_queue_progress)
         self.update_current_song_signal.connect(self.update_current_song)
+        self.update_song_count_signal.connect(self.update_song_count)
         print("[GUI] Connected thread-safe update signals")
 
         # Initialize command preview
@@ -909,7 +911,7 @@ class SpotDLGUI(QMainWindow):
         layout.addStretch()
 
     def create_queue_tab(self):
-        """Create the queue tab with preview cards"""
+        """Create the queue tab with compact preview cards"""
         queue_widget = QWidget()
         layout = QVBoxLayout(queue_widget)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -969,19 +971,20 @@ class SpotDLGUI(QMainWindow):
 
         self.queue_preview_scroll = QScrollArea()
         self.queue_preview_scroll.setWidgetResizable(True)
-        self.queue_preview_scroll.setFixedHeight(300)  # Increased for larger cards
+        self.queue_preview_scroll.setFixedHeight(300)  # Fits ~3 compact cards
         self.queue_preview_scroll.setStyleSheet("""
             QScrollArea {
-                background-color: #2b2b2b;
-                border: 1px solid #3d3d3d;
-                border-radius: 5px;
+                background-color: #1e1e1e;
+                border: 1px solid #333333;
+                border-radius: 8px;
             }
         """)
 
         self.queue_preview_widget = QWidget()
+        self.queue_preview_widget.setStyleSheet("background-color: #1e1e1e;")
         self.queue_preview_layout = QVBoxLayout(self.queue_preview_widget)
-        self.queue_preview_layout.setSpacing(10)
-        self.queue_preview_layout.setContentsMargins(10, 10, 10, 10)
+        self.queue_preview_layout.setSpacing(8)
+        self.queue_preview_layout.setContentsMargins(8, 8, 8, 8)
         self.queue_preview_layout.addStretch()
 
         self.queue_preview_scroll.setWidget(self.queue_preview_widget)
@@ -1475,92 +1478,155 @@ class SpotDLGUI(QMainWindow):
         # Update entry
         self.command_entry.setText(command)
 
+    # =========================================================================
+    # IMPROVED QUEUE CARD SYSTEM - Compact and informative
+    # =========================================================================
+
     def create_queue_card(self, queue_id, metadata):
-        """Create a preview card for a download with image, info, and progress bar"""
+        """Create a compact preview card for a download with image, info, and progress"""
         card = QFrame()
         card.setObjectName(f"card_{queue_id}")
         card.setStyleSheet("""
             QFrame {
-                background-color: #242424;
-                border: 2px solid #3d3d3d;
-                border-radius: 10px;
-                padding: 15px;
+                background-color: #2a2a2a;
+                border: 1px solid #3d3d3d;
+                border-radius: 8px;
+            }
+            QFrame:hover {
+                border: 1px solid #4CAF50;
             }
         """)
-        card.setFixedHeight(200)  # Increased for better spacing
+        card.setFixedHeight(90)  # Compact height - fits ~3 cards in 300px scroll area
 
         card_layout = QHBoxLayout(card)
-        card_layout.setSpacing(20)
-        card_layout.setContentsMargins(10, 10, 10, 10)
+        card_layout.setSpacing(12)
+        card_layout.setContentsMargins(8, 8, 12, 8)
 
-        # Album/Playlist art - BIGGER, NO WEIRD BORDER
+        # Album/Playlist art - compact square
         art_label = QLabel()
         art_label.setObjectName(f"art_{queue_id}")
-        art_label.setFixedSize(150, 150)
-        art_label.setStyleSheet("background-color: #2b2b2b; border: none; border-radius: 8px;")
+        art_label.setFixedSize(74, 74)
+        art_label.setStyleSheet("""
+            background-color: #1a1a1a; 
+            border: none; 
+            border-radius: 6px;
+        """)
         art_label.setAlignment(Qt.AlignCenter)
-        art_label.setScaledContents(True)  # Fill the entire square
+        art_label.setScaledContents(True)
         art_label.setText("🎵")
-        art_label.setFont(QFont("", 48))
+        art_label.setFont(QFont("", 28))
         card_layout.addWidget(art_label)
 
-        # Info section - ONE SIMPLE TEXT BOX
-        info_layout = QVBoxLayout()
-        info_layout.setSpacing(10)
-        info_layout.setContentsMargins(10, 10, 10, 10)
+        # Info section - vertical layout
+        info_widget = QWidget()
+        info_widget.setStyleSheet("background: transparent;")
+        info_layout = QVBoxLayout(info_widget)
+        info_layout.setSpacing(2)
+        info_layout.setContentsMargins(0, 2, 0, 2)
 
-        # Single combined text label with rich formatting
-        album_name = metadata.get('name', 'Loading...')
-        artist_name = metadata.get('artist', metadata.get('artists', 'Fetching metadata...'))
+        # Row 1: Title (album/playlist name)
+        title_label = QLabel(metadata.get('name', 'Loading...'))
+        title_label.setObjectName(f"title_{queue_id}")
+        title_label.setStyleSheet("""
+            font-size: 13px; 
+            font-weight: bold; 
+            color: #FFFFFF;
+            background: transparent;
+        """)
+        title_label.setWordWrap(False)
+        info_layout.addWidget(title_label)
 
-        # Format text with HTML for better styling
-        combined_text = f'<div style="line-height: 1.4;">' \
-                       f'<span style="font-size: 16pt; font-weight: bold; color: #FFFFFF;">{album_name}</span><br>' \
-                       f'<span style="font-size: 11pt; color: #AAAAAA;">{artist_name}</span>' \
-                       f'</div>'
+        # Row 2: Artist
+        artist_text = metadata.get('artist', metadata.get('artists', 'Fetching...'))
+        artist_label = QLabel(artist_text)
+        artist_label.setObjectName(f"artist_{queue_id}")
+        artist_label.setStyleSheet("""
+            font-size: 11px; 
+            color: #AAAAAA;
+            background: transparent;
+        """)
+        artist_label.setWordWrap(False)
+        info_layout.addWidget(artist_label)
 
-        text_label = QLabel(combined_text)
-        text_label.setObjectName(f"text_{queue_id}")
-        text_label.setTextFormat(Qt.RichText)  # Enable HTML formatting
-        text_label.setStyleSheet("padding: 5px; background-color: transparent;")
-        text_label.setWordWrap(True)
-        text_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        info_layout.addWidget(text_label, 1)
+        # Row 3: Current song being downloaded
+        song_label = QLabel("⏳ Waiting to start...")
+        song_label.setObjectName(f"song_{queue_id}")
+        song_label.setStyleSheet("""
+            font-size: 10px; 
+            color: #888888; 
+            font-style: italic;
+            background: transparent;
+        """)
+        song_label.setWordWrap(False)
+        info_layout.addWidget(song_label)
 
-        # Progress bar with song count
+        card_layout.addWidget(info_widget, 1)
+
+        # Right side - progress section
+        progress_widget = QWidget()
+        progress_widget.setFixedWidth(100)
+        progress_widget.setStyleSheet("background: transparent;")
+        progress_layout = QVBoxLayout(progress_widget)
+        progress_layout.setSpacing(4)
+        progress_layout.setContentsMargins(0, 8, 0, 8)
+
+        # Progress count label (e.g., "3/12 songs")
+        count_label = QLabel("—")
+        count_label.setObjectName(f"count_{queue_id}")
+        count_label.setAlignment(Qt.AlignCenter)
+        count_label.setStyleSheet("""
+            font-size: 11px; 
+            color: #CCCCCC; 
+            font-weight: bold;
+            background: transparent;
+        """)
+        progress_layout.addWidget(count_label)
+
+        # Compact progress bar
         progress_bar = QProgressBar()
         progress_bar.setObjectName(f"progress_{queue_id}")
-        progress_bar.setFixedHeight(28)
+        progress_bar.setFixedHeight(8)
         progress_bar.setValue(0)
-        progress_bar.setFormat("%p%")
+        progress_bar.setTextVisible(False)
         progress_bar.setStyleSheet("""
             QProgressBar {
-                border: 2px solid #3d3d3d;
-                border-radius: 6px;
-                text-align: center;
+                border: none;
+                border-radius: 4px;
                 background-color: #1a1a1a;
-                color: white;
-                font-weight: bold;
-                font-size: 11pt;
             }
             QProgressBar::chunk {
                 background-color: #4CAF50;
                 border-radius: 4px;
             }
         """)
-        info_layout.addWidget(progress_bar)
+        progress_layout.addWidget(progress_bar)
 
-        card_layout.addLayout(info_layout, 1)
+        # Status label (Pending/Downloading/Complete)
+        status_label = QLabel("Pending")
+        status_label.setObjectName(f"status_{queue_id}")
+        status_label.setAlignment(Qt.AlignCenter)
+        status_label.setStyleSheet("""
+            font-size: 9px; 
+            color: #888888;
+            background: transparent;
+        """)
+        progress_layout.addWidget(status_label)
+
+        card_layout.addWidget(progress_widget)
 
         # Store references
         card.art_label = art_label
-        card.text_label = text_label
+        card.title_label = title_label
+        card.artist_label = artist_label
+        card.song_label = song_label
+        card.count_label = count_label
         card.progress_bar = progress_bar
-        card.album_name = album_name
-        card.artist_name = artist_name
-        card.current_song = ""
+        card.status_label = status_label
 
-        # Track song counts
+        # Track data
+        card.album_name = metadata.get('name', 'Loading...')
+        card.artist_name = artist_text
+        card.current_song = ""
         card.total_songs = 0
         card.completed_songs = 0
 
@@ -1570,8 +1636,7 @@ class SpotDLGUI(QMainWindow):
         # Store card reference
         self.queue_items[queue_id] = card
 
-        print(f"[DEBUG] Created queue card for {queue_id}")
-        print(f"[DEBUG] Album: '{album_name}', Artist: '{artist_name}'")
+        print(f"[DEBUG] Created compact queue card for {queue_id}")
 
         # Load image if URL available
         if 'image_url' in metadata and metadata['image_url']:
@@ -1586,7 +1651,7 @@ class SpotDLGUI(QMainWindow):
         reply.finished.connect(lambda: self.on_image_loaded(queue_id, reply))
 
     def on_image_loaded(self, queue_id, reply):
-        """Handle loaded image"""
+        """Handle loaded image - scale to 74x74"""
         if queue_id not in self.queue_items:
             reply.deleteLater()
             return
@@ -1597,14 +1662,18 @@ class SpotDLGUI(QMainWindow):
             pixmap.loadFromData(data)
 
             if not pixmap.isNull():
-                # Scale to fill 150x150 (expand to fill, then crop to center)
-                scaled_pixmap = pixmap.scaled(150, 150, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                # Scale to fill 74x74
+                scaled_pixmap = pixmap.scaled(
+                    74, 74, 
+                    Qt.KeepAspectRatioByExpanding, 
+                    Qt.SmoothTransformation
+                )
 
-                # Crop to exact 150x150 if needed (center crop)
-                if scaled_pixmap.width() > 150 or scaled_pixmap.height() > 150:
-                    x = (scaled_pixmap.width() - 150) // 2
-                    y = (scaled_pixmap.height() - 150) // 2
-                    scaled_pixmap = scaled_pixmap.copy(x, y, 150, 150)
+                # Center crop if needed
+                if scaled_pixmap.width() > 74 or scaled_pixmap.height() > 74:
+                    x = (scaled_pixmap.width() - 74) // 2
+                    y = (scaled_pixmap.height() - 74) // 2
+                    scaled_pixmap = scaled_pixmap.copy(x, y, 74, 74)
 
                 self.queue_items[queue_id].art_label.setPixmap(scaled_pixmap)
                 self.queue_items[queue_id].art_label.setText("")
@@ -1613,76 +1682,83 @@ class SpotDLGUI(QMainWindow):
 
     def update_queue_progress(self, queue_id, progress):
         """Update progress bar for a queue item"""
-        print(f"[DEBUG] Updating progress for queue_id={queue_id}, progress={progress}, exists={queue_id in self.queue_items}")
         if queue_id in self.queue_items:
-            self.queue_items[queue_id].progress_bar.setValue(int(progress))
-            print(f"[DEBUG] Progress updated to {progress}%")
-        else:
-            print(f"[DEBUG] Queue ID not found in items. Available: {list(self.queue_items.keys())}")
+            card = self.queue_items[queue_id]
+            card.progress_bar.setValue(int(progress))
+            
+            # Update status based on progress
+            if progress == 0:
+                card.status_label.setText("Pending")
+                card.status_label.setStyleSheet("font-size: 9px; color: #888888; background: transparent;")
+            elif progress < 100:
+                card.status_label.setText("Downloading")
+                card.status_label.setStyleSheet("font-size: 9px; color: #4CAF50; background: transparent;")
+            else:
+                card.status_label.setText("Complete ✓")
+                card.status_label.setStyleSheet("font-size: 9px; color: #4CAF50; font-weight: bold; background: transparent;")
 
     def update_current_song(self, queue_id, song_name):
         """Update the current song being downloaded"""
         if queue_id in self.queue_items:
             card = self.queue_items[queue_id]
-
-            # Update current song and refresh text with HTML formatting
             card.current_song = song_name
-            combined_text = f'<div style="line-height: 1.4;">' \
-                           f'<span style="font-size: 16pt; font-weight: bold; color: #FFFFFF;">{card.album_name}</span><br>' \
-                           f'<span style="font-size: 11pt; color: #AAAAAA;">{card.artist_name}</span><br>' \
-                           f'<span style="font-size: 10pt; color: #4CAF50; font-style: italic;">🎵 {song_name}</span>' \
-                           f'</div>'
-            card.text_label.setText(combined_text)
-            print(f"[DEBUG] Updated current song for {queue_id}: {song_name}")
+            
+            # Truncate long song names
+            display_name = song_name if len(song_name) <= 45 else song_name[:42] + "..."
+            card.song_label.setText(f"🎵 {display_name}")
+            card.song_label.setStyleSheet("""
+                font-size: 10px; 
+                color: #4CAF50; 
+                font-style: italic;
+                background: transparent;
+            """)
 
-            # Update song count and progress bar format
+            # Update song count
             card.completed_songs += 1
             if card.total_songs > 0:
                 progress = int((card.completed_songs / card.total_songs) * 100)
                 card.progress_bar.setValue(progress)
-                # Format: "8/8 songs (100%)"
-                card.progress_bar.setFormat(f"{card.completed_songs}/{card.total_songs} songs ({progress}%)")
-                print(f"[DEBUG] Progress: {card.completed_songs}/{card.total_songs} songs ({progress}%)")
-        else:
-            print(f"[DEBUG] Queue ID {queue_id} not found for current song update")
+                card.count_label.setText(f"{card.completed_songs}/{card.total_songs} songs")
+            else:
+                card.count_label.setText(f"{card.completed_songs} songs")
+
+            # Update status
+            card.status_label.setText("Downloading")
+            card.status_label.setStyleSheet("font-size: 9px; color: #4CAF50; background: transparent;")
+
+    def update_song_count(self, queue_id, completed, total):
+        """Update the song count display (thread-safe signal handler)"""
+        if queue_id in self.queue_items:
+            card = self.queue_items[queue_id]
+            card.total_songs = total
+            card.completed_songs = completed
+            card.count_label.setText(f"0/{total} songs")
+            card.song_label.setText("🔍 Scanning...")
+            card.song_label.setStyleSheet("font-size: 10px; color: #2196F3; font-style: italic; background: transparent;")
+            card.status_label.setText("Starting")
+            card.status_label.setStyleSheet("font-size: 9px; color: #2196F3; background: transparent;")
 
     def update_queue_card_metadata(self, queue_id, metadata):
         """Update queue card with fetched metadata"""
-        print(f"[DEBUG] update_queue_card_metadata called for queue_id={queue_id}")
-        print(f"[DEBUG] Metadata: name={metadata.get('name')}, artist={metadata.get('artist')}, image_url={metadata.get('image_url', 'N/A')[:50]}")
-        print(f"[DEBUG] queue_items keys: {list(self.queue_items.keys())}")
+        if queue_id not in self.queue_items:
+            print(f"[DEBUG] Queue ID {queue_id} not found for metadata update")
+            return
+            
+        card = self.queue_items[queue_id]
 
-        if queue_id in self.queue_items:
-            card = self.queue_items[queue_id]
+        # Update stored data
+        card.album_name = metadata.get('name', 'Unknown')
+        card.artist_name = metadata.get('artist', 'Unknown')
 
-            # Update stored metadata
-            card.album_name = metadata.get('name', 'Unknown')
-            card.artist_name = metadata.get('artist', 'Unknown')
+        # Update labels
+        card.title_label.setText(card.album_name)
+        card.artist_label.setText(card.artist_name)
 
-            # Update text label with HTML formatting
-            if card.current_song:
-                combined_text = f'<div style="line-height: 1.4;">' \
-                               f'<span style="font-size: 16pt; font-weight: bold; color: #FFFFFF;">{card.album_name}</span><br>' \
-                               f'<span style="font-size: 11pt; color: #AAAAAA;">{card.artist_name}</span><br>' \
-                               f'<span style="font-size: 10pt; color: #4CAF50; font-style: italic;">🎵 {card.current_song}</span>' \
-                               f'</div>'
-            else:
-                combined_text = f'<div style="line-height: 1.4;">' \
-                               f'<span style="font-size: 16pt; font-weight: bold; color: #FFFFFF;">{card.album_name}</span><br>' \
-                               f'<span style="font-size: 11pt; color: #AAAAAA;">{card.artist_name}</span>' \
-                               f'</div>'
-            card.text_label.setText(combined_text)
+        # Load image if available
+        if 'image_url' in metadata and metadata['image_url']:
+            self.load_queue_image(queue_id, metadata['image_url'])
 
-            print(f"[DEBUG] Updated text - Album: '{card.album_name}', Artist: '{card.artist_name}'")
-
-            # Load image if available
-            if 'image_url' in metadata and metadata['image_url']:
-                print(f"[DEBUG] Loading image for {queue_id}: {metadata['image_url'][:50]}")
-                self.load_queue_image(queue_id, metadata['image_url'])
-            else:
-                print(f"[DEBUG] No image_url in metadata")
-        else:
-            print(f"[DEBUG] ERROR: queue_id {queue_id} not found in queue_items!")
+        print(f"[DEBUG] Updated metadata for {queue_id}: {card.album_name}")
 
     def remove_queue_card(self, queue_id):
         """Remove a queue card when download is complete"""
@@ -1873,7 +1949,7 @@ class SpotDLGUI(QMainWindow):
         self.log_to_queue(f"{'='*60}\n\n")
 
         # Set progress to downloading
-        self.update_progress_signal.emit(queue_id, 50)
+        self.update_progress_signal.emit(queue_id, 5)
 
         # Now run the actual download
         self.run_download(queue_id, cmd, download_folder, query)
@@ -2005,12 +2081,8 @@ class SpotDLGUI(QMainWindow):
                     if match:
                         total_songs = int(match.group(1))
                         print(f"[DEBUG] Found {total_songs} songs for {queue_id}")
-                        # Update card's total_songs
-                        if queue_id in self.queue_items:
-                            self.queue_items[queue_id].total_songs = total_songs
-                            self.queue_items[queue_id].completed_songs = 0
-                            # Update progress bar format
-                            self.queue_items[queue_id].progress_bar.setFormat(f"0/{total_songs} songs")
+                        # Update via signal (thread-safe)
+                        self.update_song_count_signal.emit(queue_id, 0, total_songs)
 
                 # Parse individual song downloads: Downloaded "MASSIVE HASSLE - Twos": https://...
                 if "Downloaded" in line and '"' in line:
@@ -2033,46 +2105,52 @@ class SpotDLGUI(QMainWindow):
 
             # Log completion
             timestamp = datetime.now().strftime("%H:%M:%S")
-            # Capture queue_id properly for lambdas
             qid = queue_id
 
             if process.returncode == 0:
                 self.log_to_queue(f"\n[{timestamp}] ✅ Download completed successfully!\n")
                 self.log_to_queue(f"📁 Files saved to: {download_folder}\n")
-                # Update progress to 100%
-                print(f"[DEBUG] Download complete for queue_id: {queue_id}")
                 self.update_progress_signal.emit(queue_id, 100)
-                # Update text to show completion
+                
+                # Update card to show completion
                 if queue_id in self.queue_items:
                     card = self.queue_items[queue_id]
-                    card.current_song = "✅ Completed"
-                    combined_text = f'<div style="line-height: 1.4;">' \
-                                   f'<span style="font-size: 16pt; font-weight: bold; color: #FFFFFF;">{card.album_name}</span><br>' \
-                                   f'<span style="font-size: 11pt; color: #AAAAAA;">{card.artist_name}</span><br>' \
-                                   f'<span style="font-size: 10pt; color: #4CAF50; font-weight: bold;">✅ Completed</span>' \
-                                   f'</div>'
-                    card.text_label.setText(combined_text)
-                # Note: Card removal is handled by auto-clear or manual clear
+                    card.song_label.setText("✅ All songs downloaded!")
+                    card.song_label.setStyleSheet("font-size: 10px; color: #4CAF50; font-weight: bold; background: transparent;")
+                    card.status_label.setText("Complete ✓")
+                    card.status_label.setStyleSheet("font-size: 9px; color: #4CAF50; font-weight: bold; background: transparent;")
+                    if card.total_songs > 0:
+                        card.count_label.setText(f"{card.total_songs}/{card.total_songs} songs")
             else:
                 self.log_to_queue(f"\n[{timestamp}] ❌ Download failed with exit code {process.returncode}\n")
-                print(f"[DEBUG] Download failed for queue_id: {queue_id}")
                 if queue_id in self.queue_items:
                     card = self.queue_items[queue_id]
-                    card.current_song = "❌ Failed"
-                    combined_text = f'<div style="line-height: 1.4;">' \
-                                   f'<span style="font-size: 16pt; font-weight: bold; color: #FFFFFF;">{card.album_name}</span><br>' \
-                                   f'<span style="font-size: 11pt; color: #AAAAAA;">{card.artist_name}</span><br>' \
-                                   f'<span style="font-size: 10pt; color: #F44336; font-weight: bold;">❌ Failed</span>' \
-                                   f'</div>'
-                    card.text_label.setText(combined_text)
+                    card.song_label.setText("❌ Download failed")
+                    card.song_label.setStyleSheet("font-size: 10px; color: #F44336; font-weight: bold; background: transparent;")
+                    card.status_label.setText("Failed")
+                    card.status_label.setStyleSheet("font-size: 9px; color: #F44336; font-weight: bold; background: transparent;")
+                    card.progress_bar.setStyleSheet("""
+                        QProgressBar {
+                            border: none;
+                            border-radius: 4px;
+                            background-color: #1a1a1a;
+                        }
+                        QProgressBar::chunk {
+                            background-color: #F44336;
+                            border-radius: 4px;
+                        }
+                    """)
 
         except Exception as e:
             timestamp = datetime.now().strftime("%H:%M:%S")
             self.log_to_queue(f"\n[{timestamp}] ❌ Error: {str(e)}\n")
-            # Remove card on error
-            qid = queue_id
-            print(f"[DEBUG] Download error for queue_id: {qid}: {e}")
-            QTimer.singleShot(3000, lambda q=qid: self.remove_queue_card(q))
+            print(f"[DEBUG] Download error for queue_id: {queue_id}: {e}")
+            if queue_id in self.queue_items:
+                card = self.queue_items[queue_id]
+                card.song_label.setText(f"❌ Error: {str(e)[:30]}")
+                card.song_label.setStyleSheet("font-size: 10px; color: #F44336; background: transparent;")
+                card.status_label.setText("Error")
+                card.status_label.setStyleSheet("font-size: 9px; color: #F44336; background: transparent;")
 
     def clear_queue_log(self):
         """Clear the queue log display"""
@@ -2124,6 +2202,10 @@ class SpotDLGUI(QMainWindow):
         """Remove a specific queue item by ID (used for auto-clear)"""
         if not hasattr(self, 'queue_manager'):
             return
+
+        # Remove visual card
+        if queue_id in self.queue_items:
+            self.remove_queue_card(queue_id)
 
         # Remove from queue manager
         with self.queue_manager.lock:

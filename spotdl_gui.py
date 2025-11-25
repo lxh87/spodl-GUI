@@ -1497,8 +1497,9 @@ class SpotDLGUI(QMainWindow):
         art_label = QLabel()
         art_label.setObjectName(f"art_{queue_id}")
         art_label.setFixedSize(150, 150)
-        art_label.setStyleSheet("background-color: #2b2b2b; border: none;")
+        art_label.setStyleSheet("background-color: #2b2b2b; border: none; border-radius: 8px;")
         art_label.setAlignment(Qt.AlignCenter)
+        art_label.setScaledContents(True)  # Fill the entire square
         art_label.setText("🎵")
         art_label.setFont(QFont("", 48))
         card_layout.addWidget(art_label)
@@ -1508,16 +1509,20 @@ class SpotDLGUI(QMainWindow):
         info_layout.setSpacing(10)
         info_layout.setContentsMargins(10, 10, 10, 10)
 
-        # Single combined text label
+        # Single combined text label with rich formatting
         album_name = metadata.get('name', 'Loading...')
         artist_name = metadata.get('artist', metadata.get('artists', 'Fetching metadata...'))
-        combined_text = f"{album_name}\n{artist_name}"
+
+        # Format text with HTML for better styling
+        combined_text = f'<div style="line-height: 1.4;">' \
+                       f'<span style="font-size: 16pt; font-weight: bold; color: #FFFFFF;">{album_name}</span><br>' \
+                       f'<span style="font-size: 11pt; color: #AAAAAA;">{artist_name}</span>' \
+                       f'</div>'
 
         text_label = QLabel(combined_text)
         text_label.setObjectName(f"text_{queue_id}")
-        text_font = QFont("Arial", 12)
-        text_label.setFont(text_font)
-        text_label.setStyleSheet("color: white; padding: 10px;")
+        text_label.setTextFormat(Qt.RichText)  # Enable HTML formatting
+        text_label.setStyleSheet("padding: 5px; background-color: transparent;")
         text_label.setWordWrap(True)
         text_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         info_layout.addWidget(text_label, 1)
@@ -1592,8 +1597,15 @@ class SpotDLGUI(QMainWindow):
             pixmap.loadFromData(data)
 
             if not pixmap.isNull():
-                # Scale to fit 150x150
-                scaled_pixmap = pixmap.scaled(150, 150, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                # Scale to fill 150x150 (expand to fill, then crop to center)
+                scaled_pixmap = pixmap.scaled(150, 150, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+
+                # Crop to exact 150x150 if needed (center crop)
+                if scaled_pixmap.width() > 150 or scaled_pixmap.height() > 150:
+                    x = (scaled_pixmap.width() - 150) // 2
+                    y = (scaled_pixmap.height() - 150) // 2
+                    scaled_pixmap = scaled_pixmap.copy(x, y, 150, 150)
+
                 self.queue_items[queue_id].art_label.setPixmap(scaled_pixmap)
                 self.queue_items[queue_id].art_label.setText("")
 
@@ -1613,9 +1625,13 @@ class SpotDLGUI(QMainWindow):
         if queue_id in self.queue_items:
             card = self.queue_items[queue_id]
 
-            # Update current song and refresh text
+            # Update current song and refresh text with HTML formatting
             card.current_song = song_name
-            combined_text = f"{card.album_name}\n{card.artist_name}\n🎵 {song_name}"
+            combined_text = f'<div style="line-height: 1.4;">' \
+                           f'<span style="font-size: 16pt; font-weight: bold; color: #FFFFFF;">{card.album_name}</span><br>' \
+                           f'<span style="font-size: 11pt; color: #AAAAAA;">{card.artist_name}</span><br>' \
+                           f'<span style="font-size: 10pt; color: #4CAF50; font-style: italic;">🎵 {song_name}</span>' \
+                           f'</div>'
             card.text_label.setText(combined_text)
             print(f"[DEBUG] Updated current song for {queue_id}: {song_name}")
 
@@ -1643,11 +1659,18 @@ class SpotDLGUI(QMainWindow):
             card.album_name = metadata.get('name', 'Unknown')
             card.artist_name = metadata.get('artist', 'Unknown')
 
-            # Update text label
+            # Update text label with HTML formatting
             if card.current_song:
-                combined_text = f"{card.album_name}\n{card.artist_name}\n🎵 {card.current_song}"
+                combined_text = f'<div style="line-height: 1.4;">' \
+                               f'<span style="font-size: 16pt; font-weight: bold; color: #FFFFFF;">{card.album_name}</span><br>' \
+                               f'<span style="font-size: 11pt; color: #AAAAAA;">{card.artist_name}</span><br>' \
+                               f'<span style="font-size: 10pt; color: #4CAF50; font-style: italic;">🎵 {card.current_song}</span>' \
+                               f'</div>'
             else:
-                combined_text = f"{card.album_name}\n{card.artist_name}"
+                combined_text = f'<div style="line-height: 1.4;">' \
+                               f'<span style="font-size: 16pt; font-weight: bold; color: #FFFFFF;">{card.album_name}</span><br>' \
+                               f'<span style="font-size: 11pt; color: #AAAAAA;">{card.artist_name}</span>' \
+                               f'</div>'
             card.text_label.setText(combined_text)
 
             print(f"[DEBUG] Updated text - Album: '{card.album_name}', Artist: '{card.artist_name}'")
@@ -2023,7 +2046,11 @@ class SpotDLGUI(QMainWindow):
                 if queue_id in self.queue_items:
                     card = self.queue_items[queue_id]
                     card.current_song = "✅ Completed"
-                    combined_text = f"{card.album_name}\n{card.artist_name}\n✅ Completed"
+                    combined_text = f'<div style="line-height: 1.4;">' \
+                                   f'<span style="font-size: 16pt; font-weight: bold; color: #FFFFFF;">{card.album_name}</span><br>' \
+                                   f'<span style="font-size: 11pt; color: #AAAAAA;">{card.artist_name}</span><br>' \
+                                   f'<span style="font-size: 10pt; color: #4CAF50; font-weight: bold;">✅ Completed</span>' \
+                                   f'</div>'
                     card.text_label.setText(combined_text)
                 # Note: Card removal is handled by auto-clear or manual clear
             else:
@@ -2032,7 +2059,11 @@ class SpotDLGUI(QMainWindow):
                 if queue_id in self.queue_items:
                     card = self.queue_items[queue_id]
                     card.current_song = "❌ Failed"
-                    combined_text = f"{card.album_name}\n{card.artist_name}\n❌ Failed"
+                    combined_text = f'<div style="line-height: 1.4;">' \
+                                   f'<span style="font-size: 16pt; font-weight: bold; color: #FFFFFF;">{card.album_name}</span><br>' \
+                                   f'<span style="font-size: 11pt; color: #AAAAAA;">{card.artist_name}</span><br>' \
+                                   f'<span style="font-size: 10pt; color: #F44336; font-weight: bold;">❌ Failed</span>' \
+                                   f'</div>'
                     card.text_label.setText(combined_text)
 
         except Exception as e:

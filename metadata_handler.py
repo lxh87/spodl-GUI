@@ -77,9 +77,15 @@ class SpotifyMetadataHandler:
             try:
                 self.spotify_client = SpotifyClient()
                 logger.info("✓ Initialized Spotify API client")
+                print("[MetadataHandler] Using direct Python API mode")
             except Exception as e:
                 logger.warning(f"⚠ Failed to initialize Spotify client: {e}")
+                print(f"[MetadataHandler] Spotify client init failed: {e}")
+                print("[MetadataHandler] Falling back to subprocess mode")
                 self.use_subprocess = True
+
+        if self.use_subprocess:
+            print("[MetadataHandler] Using subprocess mode (calling spotdl CLI)")
 
     def get_metadata(self, url_or_query: str) -> Optional[Dict[str, Any]]:
         """
@@ -259,6 +265,8 @@ class SpotifyMetadataHandler:
     def _get_metadata_subprocess(self, url_or_query: str) -> Optional[Dict[str, Any]]:
         """Get metadata using subprocess call to spotdl (compatible with .exe)"""
         try:
+            print(f"[MetadataHandler] Fetching metadata via subprocess for: {url_or_query}")
+
             # Create temporary file for metadata
             with tempfile.NamedTemporaryFile(mode='w', suffix='.spotdl', delete=False) as temp_file:
                 temp_path = temp_file.name
@@ -273,6 +281,7 @@ class SpotifyMetadataHandler:
 
             if result.returncode != 0 or not os.path.exists(temp_path):
                 logger.error(f"spotdl save failed: {result.stderr}")
+                print(f"[MetadataHandler] spotdl save failed: {result.stderr}")
                 return None
 
             # Read the .spotdl file (it's JSON)
@@ -287,9 +296,13 @@ class SpotifyMetadataHandler:
 
             # Parse and structure the metadata
             if not isinstance(data, list) or len(data) == 0:
+                print(f"[MetadataHandler] Invalid data format or empty list")
                 return None
 
-            return self._parse_subprocess_metadata(data, url_or_query)
+            metadata = self._parse_subprocess_metadata(data, url_or_query)
+            if metadata:
+                print(f"[MetadataHandler] Successfully fetched metadata: {metadata.get('name', 'Unknown')}")
+            return metadata
 
         except subprocess.TimeoutExpired:
             logger.error("Timeout while fetching metadata")

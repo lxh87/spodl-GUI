@@ -58,6 +58,11 @@ class ThreadSafeLogger(QObject):
 
 
 class SpotDLGUI(QMainWindow):
+    # Qt Signals for thread-safe GUI updates
+    create_card_signal = Signal(str, dict)      # queue_id, metadata
+    update_metadata_signal = Signal(str, dict)  # queue_id, metadata
+    update_progress_signal = Signal(str, int)   # queue_id, progress
+
     def __init__(self):
         super().__init__()
 
@@ -130,8 +135,22 @@ class SpotDLGUI(QMainWindow):
         self.queue_manager = DownloadQueueManager(self)
         print("[GUI] DownloadQueueManager initialized")
 
+        # Track auto-clear timers for completed items
+        self.auto_clear_timers = {}  # {queue_id: QTimer}
+
+        # Connect thread-safe GUI update signals
+        self.create_card_signal.connect(self.create_queue_card)
+        self.update_metadata_signal.connect(self.update_queue_card_metadata)
+        self.update_progress_signal.connect(self.update_queue_progress)
+        print("[GUI] Connected thread-safe update signals")
+
         # Initialize command preview
         self.update_command_preview()
+
+        # Setup queue status update timer (every 2 seconds)
+        self.queue_status_timer = QTimer()
+        self.queue_status_timer.timeout.connect(self.update_queue_status)
+        self.queue_status_timer.start(2000)  # Update every 2 seconds
 
         # Defer non-critical startup tasks
         QTimer.singleShot(100, self.check_spotdl)
@@ -419,6 +438,7 @@ class SpotDLGUI(QMainWindow):
             self.settings["download_folder"] = self.folder_entry.text()
             self.settings["theme"] = "dark"  # Always dark in this version
             self.settings["create_folder_per_url"] = self.folder_per_url_check.isChecked()
+            self.settings["auto_clear_completed"] = self.auto_clear_queue_check.isChecked()
 
             with open(self.config_file, 'w') as f:
                 json.dump(self.settings, f, indent=2)
@@ -816,6 +836,12 @@ class SpotDLGUI(QMainWindow):
         self.folder_per_url_check.stateChanged.connect(self.update_command_preview)
         check_grid.addWidget(self.folder_per_url_check, 1, 2)
 
+        self.auto_clear_queue_check = QCheckBox("Auto-Clear Completed")
+        self.auto_clear_queue_check.setToolTip("Automatically remove completed downloads from queue after 5 seconds")
+        self.auto_clear_queue_check.setChecked(self.settings.get("auto_clear_completed", False))
+        self.auto_clear_queue_check.stateChanged.connect(self.save_settings)
+        check_grid.addWidget(self.auto_clear_queue_check, 2, 0)
+
         advanced_layout.addLayout(check_grid)
         layout.addWidget(advanced_frame)
 
@@ -883,7 +909,7 @@ class SpotDLGUI(QMainWindow):
         layout = QVBoxLayout(queue_widget)
         layout.setContentsMargins(20, 20, 20, 20)
 
-        # Header
+        # Header with queue controls
         header_layout = QHBoxLayout()
 
         title = QLabel("Download Queue")
@@ -893,14 +919,41 @@ class SpotDLGUI(QMainWindow):
         title.setFont(title_font)
         header_layout.addWidget(title)
 
+        # Queue status label
+        self.queue_status_label = QLabel("Ready")
+        self.queue_status_label.setStyleSheet("color: #888888; font-size: 12pt;")
+        header_layout.addWidget(self.queue_status_label)
+
         header_layout.addStretch()
 
-        clear_btn = QPushButton("Clear Queue")
-        clear_btn.setFixedWidth(120)
-        clear_btn.clicked.connect(self.clear_queue)
-        header_layout.addWidget(clear_btn)
+        # Pause/Resume button
+        self.pause_resume_btn = QPushButton("⏸ Pause")
+        self.pause_resume_btn.setFixedWidth(100)
+        self.pause_resume_btn.clicked.connect(self.toggle_queue_pause)
+        self.pause_resume_btn.setEnabled(False)  # Disabled until queue has items
+        header_layout.addWidget(self.pause_resume_btn)
+
+        # Clear completed button
+        self.clear_completed_btn = QPushButton("🧹 Clear Completed")
+        self.clear_completed_btn.setFixedWidth(150)
+        self.clear_completed_btn.clicked.connect(self.clear_completed_items)
+        header_layout.addWidget(self.clear_completed_btn)
+
+        # Clear log button
+        clear_log_btn = QPushButton("Clear Log")
+        clear_log_btn.setFixedWidth(100)
+        clear_log_btn.clicked.connect(self.clear_queue_log)
+        header_layout.addWidget(clear_log_btn)
 
         layout.addLayout(header_layout)
+
+        # Queue statistics bar
+        stats_layout = QHBoxLayout()
+        self.queue_stats_label = QLabel("No downloads in queue")
+        self.queue_stats_label.setStyleSheet("color: #aaaaaa; padding: 5px;")
+        stats_layout.addWidget(self.queue_stats_label)
+        stats_layout.addStretch()
+        layout.addLayout(stats_layout)
 
         # Queue preview section - scrollable area for download cards
         queue_preview_label = QLabel("Active Downloads:")
@@ -1543,14 +1596,24 @@ class SpotDLGUI(QMainWindow):
 
     def update_queue_card_metadata(self, queue_id, metadata):
         """Update queue card with fetched metadata"""
+        print(f"[DEBUG] update_queue_card_metadata called for queue_id={queue_id}")
+        print(f"[DEBUG] Metadata: name={metadata.get('name')}, artist={metadata.get('artist')}, image_url={metadata.get('image_url', 'N/A')[:50]}")
+        print(f"[DEBUG] queue_items keys: {list(self.queue_items.keys())}")
+
         if queue_id in self.queue_items:
             card = self.queue_items[queue_id]
             card.name_label.setText(metadata.get('name', 'Unknown'))
             card.artist_label.setText(metadata.get('artist', 'Unknown'))
+            print(f"[DEBUG] Updated card labels for {queue_id}")
 
             # Load image if available
             if 'image_url' in metadata and metadata['image_url']:
+                print(f"[DEBUG] Loading image for {queue_id}: {metadata['image_url'][:50]}")
                 self.load_queue_image(queue_id, metadata['image_url'])
+            else:
+                print(f"[DEBUG] No image_url in metadata")
+        else:
+            print(f"[DEBUG] ERROR: queue_id {queue_id} not found in queue_items!")
 
     def remove_queue_card(self, queue_id):
         """Remove a queue card when download is complete"""
@@ -1627,9 +1690,8 @@ class SpotDLGUI(QMainWindow):
             'artist': 'Fetching metadata...',
             'type': content_type
         }
-        qid = queue_id
-        metadata = initial_metadata
-        QTimer.singleShot(0, lambda q=qid, m=metadata: self.create_queue_card(q, m))
+        # Create card via signal (thread-safe)
+        self.create_card_signal.emit(queue_id, initial_metadata)
 
         # Clear URL input
         self.url_entry.clear()
@@ -1692,9 +1754,10 @@ class SpotDLGUI(QMainWindow):
                     'type': metadata.get('type', content_type_name),
                     'image_url': metadata.get('image_url', metadata.get('cover_url', ''))
                 }
-                qid = queue_id
-                meta = updated_metadata
-                QTimer.singleShot(0, lambda q=qid, m=meta: self.update_queue_card_metadata(q, m))
+                print(f"[DEBUG] Emitting metadata update signal for queue_id={queue_id}")
+                print(f"[DEBUG] Metadata to update: {updated_metadata}")
+                # Use signal for thread-safe GUI update
+                self.update_metadata_signal.emit(queue_id, updated_metadata)
             else:
                 self.log_to_queue(f"⚠️ Could not fetch metadata\n")
 
@@ -1740,9 +1803,8 @@ class SpotDLGUI(QMainWindow):
         self.log_to_queue(f"Command: {' '.join(cmd)}\n")
         self.log_to_queue(f"{'='*60}\n\n")
 
-        # Set progress to downloading (capture queue_id properly)
-        qid = queue_id
-        QTimer.singleShot(0, lambda q=qid: self.update_queue_progress(q, 50))
+        # Set progress to downloading
+        self.update_progress_signal.emit(queue_id, 50)
 
         # Now run the actual download
         self.run_download(queue_id, cmd, download_folder, query)
@@ -1770,10 +1832,17 @@ class SpotDLGUI(QMainWindow):
                 if 'year' in metadata:
                     metadata['year'] = str(metadata['year'])
 
+                print(f"[DEBUG] Metadata fetched successfully: {metadata.get('name', 'Unknown')}")
+            else:
+                print(f"[DEBUG] Metadata fetch returned None for: {url_or_query}")
+
             return metadata
 
         except Exception as e:
-            # If metadata fetch fails, return None to fallback to URL-based naming
+            # If metadata fetch fails, log error and return None to fallback to URL-based naming
+            print(f"[ERROR] Failed to fetch metadata for {url_or_query}: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     def apply_folder_template(self, template, metadata):
@@ -1859,9 +1928,8 @@ class SpotDLGUI(QMainWindow):
                 self.log_to_queue(line)
                 # Update progress based on output (simple estimation)
                 if "Downloaded" in line or "Processing" in line or "Downloading" in line:
-                    # Capture queue_id in closure properly
-                    qid = queue_id
-                    QTimer.singleShot(0, lambda q=qid: self.update_queue_progress(q, 75))
+                    # Update progress via signal
+                    self.update_progress_signal.emit(queue_id, 75)
 
             # Wait for completion
             process.wait()
@@ -1874,15 +1942,13 @@ class SpotDLGUI(QMainWindow):
             if process.returncode == 0:
                 self.log_to_queue(f"\n[{timestamp}] ✅ Download completed successfully!\n")
                 self.log_to_queue(f"📁 Files saved to: {download_folder}\n")
-                # Update progress to 100% and remove card after delay
-                print(f"[DEBUG] Download complete for queue_id: {qid}")
-                QTimer.singleShot(0, lambda q=qid: self.update_queue_progress(q, 100))
-                QTimer.singleShot(3000, lambda q=qid: self.remove_queue_card(q))
+                # Update progress to 100%
+                print(f"[DEBUG] Download complete for queue_id: {queue_id}")
+                self.update_progress_signal.emit(queue_id, 100)
+                # Note: Card removal is handled by auto-clear or manual clear
             else:
                 self.log_to_queue(f"\n[{timestamp}] ❌ Download failed with exit code {process.returncode}\n")
-                # Remove card on failure too
-                print(f"[DEBUG] Download failed for queue_id: {qid}")
-                QTimer.singleShot(3000, lambda q=qid: self.remove_queue_card(q))
+                print(f"[DEBUG] Download failed for queue_id: {queue_id}")
 
         except Exception as e:
             timestamp = datetime.now().strftime("%H:%M:%S")
@@ -1892,9 +1958,130 @@ class SpotDLGUI(QMainWindow):
             print(f"[DEBUG] Download error for queue_id: {qid}: {e}")
             QTimer.singleShot(3000, lambda q=qid: self.remove_queue_card(q))
 
-    def clear_queue(self):
-        """Clear the queue display"""
+    def clear_queue_log(self):
+        """Clear the queue log display"""
         self.queue_textbox.clear()
+        self.log_to_queue("🧹 Log cleared\n")
+
+    def toggle_queue_pause(self):
+        """Toggle pause/resume for the download queue"""
+        if not hasattr(self, 'queue_manager'):
+            return
+
+        if self.queue_manager.paused:
+            # Resume
+            self.queue_manager.resume_queue()
+            self.pause_resume_btn.setText("⏸ Pause")
+            self.queue_status_label.setText("Running")
+            self.queue_status_label.setStyleSheet("color: #4CAF50; font-size: 12pt;")
+        else:
+            # Pause
+            self.queue_manager.pause_queue()
+            self.pause_resume_btn.setText("▶ Resume")
+            self.queue_status_label.setText("Paused")
+            self.queue_status_label.setStyleSheet("color: #FF9800; font-size: 12pt;")
+
+    def clear_completed_items(self):
+        """Clear completed/failed/cancelled items from queue"""
+        if not hasattr(self, 'queue_manager'):
+            return
+
+        self.queue_manager.clear_completed()
+        self.update_queue_status()
+
+    def remove_queue_item_by_id(self, queue_id: str):
+        """Remove a specific queue item by ID (used for auto-clear)"""
+        if not hasattr(self, 'queue_manager'):
+            return
+
+        # Remove from queue manager
+        with self.queue_manager.lock:
+            original_len = len(self.queue_manager.queue)
+            self.queue_manager.queue = [
+                item for item in self.queue_manager.queue
+                if item.queue_id != queue_id
+            ]
+            removed = original_len - len(self.queue_manager.queue)
+
+        # Remove timer from tracking dict
+        if queue_id in self.auto_clear_timers:
+            self.auto_clear_timers[queue_id].stop()
+            del self.auto_clear_timers[queue_id]
+
+        if removed > 0:
+            print(f"[GUI] Auto-cleared queue item: {queue_id}")
+            self.log_to_queue(f"🧹 Auto-cleared completed download\n")
+            self.update_queue_status()
+
+    def update_queue_status(self):
+        """Update the queue status labels"""
+        if not hasattr(self, 'queue_manager'):
+            return
+
+        summary = self.queue_manager.get_queue_summary()
+
+        # Update statistics label
+        pending = summary['pending']
+        downloading = summary['downloading']
+        completed = summary['completed']
+        failed = summary['failed']
+        cancelled = summary['cancelled']
+        total = summary['total']
+
+        if total == 0:
+            self.queue_stats_label.setText("No downloads in queue")
+            self.pause_resume_btn.setEnabled(False)
+        else:
+            parts = []
+            if pending > 0:
+                parts.append(f"{pending} pending")
+            if downloading > 0:
+                parts.append(f"{downloading} downloading")
+            if completed > 0:
+                parts.append(f"{completed} completed")
+            if failed > 0:
+                parts.append(f"{failed} failed")
+            if cancelled > 0:
+                parts.append(f"{cancelled} cancelled")
+
+            status_text = " | ".join(parts) if parts else "Queue empty"
+            self.queue_stats_label.setText(f"Queue: {status_text} (Total: {total})")
+            self.pause_resume_btn.setEnabled(pending > 0 or downloading > 0)
+
+        # Update status label color based on state
+        if self.queue_manager.paused:
+            self.queue_status_label.setText("Paused")
+            self.queue_status_label.setStyleSheet("color: #FF9800; font-size: 12pt;")
+        elif downloading > 0:
+            self.queue_status_label.setText("Downloading")
+            self.queue_status_label.setStyleSheet("color: #4CAF50; font-size: 12pt;")
+        elif pending > 0:
+            self.queue_status_label.setText("Processing")
+            self.queue_status_label.setStyleSheet("color: #2196F3; font-size: 12pt;")
+        else:
+            self.queue_status_label.setText("Ready")
+            self.queue_status_label.setStyleSheet("color: #888888; font-size: 12pt;")
+
+        # Auto-clear completed downloads if enabled
+        if hasattr(self, 'auto_clear_queue_check') and self.auto_clear_queue_check.isChecked():
+            # Get all queue items
+            with self.queue_manager.lock:
+                for item in self.queue_manager.queue:
+                    # Check if item is finished and not already scheduled for removal
+                    if item.is_finished() and item.queue_id not in self.auto_clear_timers:
+                        # Create timer to remove this item after 5 seconds
+                        timer = QTimer()
+                        timer.setSingleShot(True)
+
+                        # Use lambda with default parameter to capture queue_id by value
+                        qid = item.queue_id
+                        timer.timeout.connect(lambda q=qid: self.remove_queue_item_by_id(q))
+
+                        # Store timer and start it
+                        self.auto_clear_timers[item.queue_id] = timer
+                        timer.start(5000)  # 5 seconds
+
+                        print(f"[GUI] Scheduled auto-clear for {item.queue_id} in 5 seconds")
 
 
 def main():

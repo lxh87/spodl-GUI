@@ -7,8 +7,10 @@ import json
 import tempfile
 import os
 
-def test_metadata_extraction(url):
+def test_metadata_extraction(sample_urls):
     """Test extracting metadata from a Spotify URL"""
+    # Use the album URL from sample_urls
+    url = sample_urls['album']
     print(f"Testing URL: {url}\n")
 
     try:

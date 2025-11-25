@@ -39,3 +39,4 @@ Thumbs.db
 
 # Config (user-specific)
 .spotdl_gui_config.json
+spotdl/

@@ -1,0 +1,32 @@
+{
+  "track": {
+    "name": "Test Track",
+    "artist": "Test Artist",
+    "artists": ["Test Artist", "Featured Artist"],
+    "type": "track",
+    "album": "Test Album",
+    "year": 2024,
+    "duration": 180,
+    "cover_url": "https://example.com/cover.jpg",
+    "image_url": "https://example.com/cover.jpg"
+  },
+  "album": {
+    "name": "Test Album",
+    "artist": "Test Artist",
+    "artists": ["Test Artist"],
+    "type": "album",
+    "year": 2024,
+    "track_count": 12,
+    "cover_url": "https://example.com/album_cover.jpg",
+    "image_url": "https://example.com/album_cover.jpg"
+  },
+  "playlist": {
+    "name": "Test Playlist",
+    "artist": "Various Artists",
+    "artists": ["Various Artists"],
+    "type": "playlist",
+    "track_count": 50,
+    "cover_url": "https://example.com/playlist_cover.jpg",
+    "image_url": "https://example.com/playlist_cover.jpg"
+  }
+}

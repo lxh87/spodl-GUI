@@ -22,6 +22,10 @@ from PySide6.QtCore import Qt, QTimer, Signal, QObject, QUrl
 from PySide6.QtGui import QFont, QTextCursor, QPixmap
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 
+# Import queue management
+from queue_item import QueueItem
+from queue_manager import DownloadQueueManager
+
 # Lazy import metadata handler - only when needed
 _metadata_handler = None
 
@@ -105,9 +109,7 @@ class SpotDLGUI(QMainWindow):
         """)
         main_layout.addWidget(self.tab_widget, 1)
 
-        # Download queue - initialize BEFORE creating tabs
-        self.download_queue = []
-        self.current_process = None
+        # Queue items tracking (for GUI cards)
         self.queue_items = {}  # Track queue items with metadata
 
         # Clipboard monitoring - initialize BEFORE creating tabs
@@ -123,6 +125,10 @@ class SpotDLGUI(QMainWindow):
         self.create_download_tab()
         self.create_queue_tab()
         self.create_settings_tab()
+
+        # Initialize queue manager AFTER tabs (needs GUI methods)
+        self.queue_manager = DownloadQueueManager(self)
+        print("[GUI] DownloadQueueManager initialized")
 
         # Initialize command preview
         self.update_command_preview()
@@ -1631,15 +1637,35 @@ class SpotDLGUI(QMainWindow):
         # Switch to queue tab immediately (no UI freeze!)
         self.tab_widget.setCurrentIndex(1)
 
-        # Start download preparation and execution in background thread
-        threading.Thread(
-            target=self.prepare_and_download,
-            args=(queue_id, query, format_val, bitrate_val, threads_val, template_val,
-                  download_folder, folder_per_url,
-                  is_playlist_url, is_album_url,
-                  preload, sponsor_block, skip_explicit, generate_lrc, playlist_numbering),
-            daemon=True
-        ).start()
+        # Create QueueItem with all settings
+        settings = {
+            'format': format_val,
+            'bitrate': bitrate_val,
+            'threads': int(threads_val),
+            'template': template_val,
+            'download_folder': download_folder,
+            'folder_per_url': folder_per_url,
+            'is_playlist_url': is_playlist_url,
+            'is_album_url': is_album_url,
+            'preload': preload,
+            'sponsor_block': sponsor_block,
+            'skip_explicit': skip_explicit,
+            'generate_lrc': generate_lrc,
+            'playlist_numbering': playlist_numbering
+        }
+
+        queue_item = QueueItem(
+            queue_id=queue_id,
+            query=query,
+            status='pending',
+            settings=settings,
+            metadata=initial_metadata,
+            progress=0,
+            created_at=datetime.now()
+        )
+
+        # Add to queue manager (it will process items one at a time)
+        self.queue_manager.add_to_queue(queue_item)
 
     def prepare_and_download(self, queue_id, query, format_val, bitrate_val, threads_val,
                             template_val, download_folder, folder_per_url,

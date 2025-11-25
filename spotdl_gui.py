@@ -1511,10 +1511,16 @@ class SpotDLGUI(QMainWindow):
         name_font.setPointSize(12)
         name_label.setFont(name_font)
         name_label.setStyleSheet("color: white;")
+        name_label.setWordWrap(True)
+        name_label.setMinimumWidth(200)
+        name_label.setMaximumWidth(600)
         info_layout.addWidget(name_label)
 
         artist_label = QLabel(metadata.get('artist', metadata.get('artists', '')))
         artist_label.setStyleSheet("color: #aaaaaa;")
+        artist_label.setWordWrap(True)
+        artist_label.setMinimumWidth(200)
+        artist_label.setMaximumWidth(600)
         info_layout.addWidget(artist_label)
 
         type_label = QLabel(f"Type: {metadata.get('type', 'track').title()}")
@@ -1602,8 +1608,29 @@ class SpotDLGUI(QMainWindow):
 
         if queue_id in self.queue_items:
             card = self.queue_items[queue_id]
-            card.name_label.setText(metadata.get('name', 'Unknown'))
-            card.artist_label.setText(metadata.get('artist', 'Unknown'))
+
+            # Update name
+            name_text = metadata.get('name', 'Unknown')
+            print(f"[DEBUG] Setting name_label text to: '{name_text}'")
+            card.name_label.setText(name_text)
+            card.name_label.adjustSize()  # Adjust size to fit text
+            card.name_label.updateGeometry()  # Update geometry
+            card.name_label.update()  # Schedule repaint
+            print(f"[DEBUG] name_label text is now: '{card.name_label.text()}'")
+
+            # Update artist
+            artist_text = metadata.get('artist', 'Unknown')
+            print(f"[DEBUG] Setting artist_label text to: '{artist_text}'")
+            card.artist_label.setText(artist_text)
+            card.artist_label.adjustSize()  # Adjust size to fit text
+            card.artist_label.updateGeometry()  # Update geometry
+            card.artist_label.update()  # Schedule repaint
+            print(f"[DEBUG] artist_label text is now: '{card.artist_label.text()}'")
+
+            # Force the entire card to update
+            card.updateGeometry()
+            card.update()
+
             print(f"[DEBUG] Updated card labels for {queue_id}")
 
             # Load image if available
@@ -1986,8 +2013,23 @@ class SpotDLGUI(QMainWindow):
         if not hasattr(self, 'queue_manager'):
             return
 
+        # Get list of completed items before clearing
+        with self.queue_manager.lock:
+            completed_ids = [
+                item.queue_id for item in self.queue_manager.queue
+                if item.is_finished()
+            ]
+
+        # Remove visual cards for completed items
+        for queue_id in completed_ids:
+            if queue_id in self.queue_items:
+                self.remove_queue_card(queue_id)
+                print(f"[GUI] Removed card for completed item: {queue_id}")
+
+        # Clear from queue manager
         self.queue_manager.clear_completed()
         self.update_queue_status()
+        print(f"[GUI] Cleared {len(completed_ids)} completed items")
 
     def remove_queue_item_by_id(self, queue_id: str):
         """Remove a specific queue item by ID (used for auto-clear)"""

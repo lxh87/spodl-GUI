@@ -18,19 +18,20 @@ from PySide6.QtWidgets import (
     QComboBox, QCheckBox, QSlider, QFrame, QFileDialog, QMessageBox,
     QTabWidget, QScrollArea, QProgressBar, QSplitter, QSizePolicy
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QUrl
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QPixmap
-from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 
 # Import queue management
 from queue_item import QueueItem
 from queue_manager import DownloadQueueManager
 
 # Import GUI modules
-from gui.utils import ThreadSafeLogger, ClipboardMonitor, is_playlist
+from gui.utils import ThreadSafeLogger, ClipboardMonitor, is_playlist, is_album
 from gui.theme import get_dark_theme_stylesheet
 from gui.config import ConfigManager
 from gui.controller import DownloadController
+from gui.queue_panel import QueuePanel
+from gui.queue_card import QueueCard
 
 # Lazy import metadata handler
 _metadata_handler = None
@@ -86,10 +87,8 @@ class SpotDLGUI(QMainWindow):
         """)
         main_layout.addWidget(self.tab_widget, 1)
 
-        self.queue_items = {}
         self.clipboard_monitor = ClipboardMonitor()
         self.clipboard_monitor.url_detected.connect(self._on_clipboard_url_detected)
-        self.network_manager = QNetworkAccessManager()
         self.download_controller = DownloadController(self.get_spotify_metadata)
 
         self.create_main_tab()
@@ -99,11 +98,11 @@ class SpotDLGUI(QMainWindow):
         self.queue_manager = DownloadQueueManager(self)
         self.auto_clear_timers = {}
 
-        self.create_card_signal.connect(self.create_queue_card)
-        self.update_metadata_signal.connect(self.update_queue_card_metadata)
-        self.update_progress_signal.connect(self.update_queue_progress)
-        self.update_current_song_signal.connect(self.update_current_song)
-        self.update_song_count_signal.connect(self.update_song_count)
+        self.create_card_signal.connect(self._create_queue_card_wrapper)
+        self.update_metadata_signal.connect(self._update_metadata_wrapper)
+        self.update_progress_signal.connect(self._update_progress_wrapper)
+        self.update_current_song_signal.connect(self._update_current_song_wrapper)
+        self.update_song_count_signal.connect(self._update_song_count_wrapper)
 
         self.update_command_preview()
 
@@ -210,9 +209,19 @@ class SpotDLGUI(QMainWindow):
         left_panel.setMaximumWidth(420)
         self.main_splitter.addWidget(left_panel)
 
-        right_panel = self.create_queue_panel()
-        right_panel.setMinimumWidth(450)
-        self.main_splitter.addWidget(right_panel)
+        self.queue_panel = QueuePanel(
+            auto_download=self.settings.get("auto_download", True),
+            auto_clear=self.settings.get("auto_clear_completed", False)
+        )
+        self.queue_panel.setMinimumWidth(450)
+
+        # Connect signals
+        self.queue_panel.start_queue_clicked.connect(self.start_queue)
+        self.queue_panel.pause_queue_clicked.connect(self.pause_queue)
+        self.queue_panel.clear_completed_clicked.connect(self.clear_completed_items)
+        self.queue_panel.auto_download_changed.connect(self.on_auto_download_changed)
+
+        self.main_splitter.addWidget(self.queue_panel)
 
         self.main_splitter.setSizes([340, 860])
         main_layout.addWidget(self.main_splitter)
@@ -1137,30 +1146,23 @@ class SpotDLGUI(QMainWindow):
 
     def _on_download_complete(self, queue_id):
         """Handle successful download completion"""
-        if queue_id in self.queue_items:
-            card = self.queue_items[queue_id]
-            card.song_label.setText("✅ Done!")
-            card.song_label.setStyleSheet("font-size: 8px; color: #4CAF50; font-weight: bold;")
+        card = self.queue_panel.get_queue_card(queue_id)
+        if card:
+            card.mark_complete()
 
     def _on_download_error(self, queue_id):
         """Handle download error"""
-        if queue_id in self.queue_items:
-            card = self.queue_items[queue_id]
-            card.song_label.setText("❌ Failed")
-            card.song_label.setStyleSheet("font-size: 8px; color: #F44336;")
-            card.status_label.setText("Failed")
-            card.status_label.setStyleSheet("font-size: 7px; color: #F44336;")
-            card.progress_bar.setStyleSheet("QProgressBar { border: none; background: #1a1a1a; } QProgressBar::chunk { background: #F44336; }")
+        card = self.queue_panel.get_queue_card(queue_id)
+        if card:
+            card.mark_failed()
 
     # =========================================================================
     # UTILITIES
     # =========================================================================
 
     def log_to_queue(self, msg):
-        self.logger.log(msg)
+        self.queue_panel.log(msg)
 
-    def clear_queue_log(self):
-        self.queue_textbox.clear()
 
     def paste_url(self):
         if text := QApplication.clipboard().text():

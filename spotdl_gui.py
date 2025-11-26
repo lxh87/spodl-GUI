@@ -8,7 +8,6 @@ Polished UI with resizable panels
 import subprocess
 import threading
 import os
-import json
 from pathlib import Path
 import sys
 from datetime import datetime
@@ -19,13 +18,22 @@ from PySide6.QtWidgets import (
     QComboBox, QCheckBox, QSlider, QFrame, QFileDialog, QMessageBox,
     QTabWidget, QScrollArea, QProgressBar, QSplitter, QSizePolicy
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QObject, QUrl
-from PySide6.QtGui import QFont, QTextCursor, QPixmap
+from PySide6.QtCore import Qt, QTimer, Signal, QUrl
+from PySide6.QtGui import QFont, QPixmap
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 
 # Import queue management
 from queue_item import QueueItem
 from queue_manager import DownloadQueueManager
+
+# Import GUI modules
+from gui.utils import (
+    ThreadSafeLogger, ClipboardMonitor,
+    is_valid_music_url, is_playlist, is_album,
+    get_content_type, sanitize_folder_name
+)
+from gui.theme import get_dark_theme_stylesheet
+from gui.config import ConfigManager
 
 # Lazy import metadata handler
 _metadata_handler = None
@@ -36,24 +44,6 @@ def get_metadata_handler():
         from metadata_handler import SpotifyMetadataHandler
         _metadata_handler = SpotifyMetadataHandler()
     return _metadata_handler
-
-
-class ThreadSafeLogger(QObject):
-    """Thread-safe logger using Qt signals"""
-    log_signal = Signal(str)
-
-    def __init__(self, text_widget):
-        super().__init__()
-        self.text_widget = text_widget
-        self.log_signal.connect(self._append_text)
-
-    def _append_text(self, text):
-        self.text_widget.moveCursor(QTextCursor.End)
-        self.text_widget.insertPlainText(text)
-        self.text_widget.moveCursor(QTextCursor.End)
-
-    def log(self, message):
-        self.log_signal.emit(message)
 
 
 class SpotDLGUI(QMainWindow):
@@ -67,13 +57,14 @@ class SpotDLGUI(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.config_file = Path.home() / ".spotdl_gui_config.json"
+        self.config_manager = ConfigManager()
+        self.settings = self.config_manager.settings
+
         self.setWindowTitle("SpotDL GUI")
         self.resize(1400, 900)
         self.setMinimumSize(1100, 700)
 
-        self.load_settings()
-        self.apply_dark_theme()
+        self.setStyleSheet(get_dark_theme_stylesheet())
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -99,10 +90,8 @@ class SpotDLGUI(QMainWindow):
         main_layout.addWidget(self.tab_widget, 1)
 
         self.queue_items = {}
-        self.clipboard = QApplication.clipboard()
-        self.last_clipboard_text = ""
-        self.clipboard_monitoring_enabled = False
-        self.clipboard_connected = False
+        self.clipboard_monitor = ClipboardMonitor()
+        self.clipboard_monitor.url_detected.connect(self._on_clipboard_url_detected)
         self.network_manager = QNetworkAccessManager()
 
         self.create_main_tab()
@@ -126,131 +115,6 @@ class SpotDLGUI(QMainWindow):
 
         QTimer.singleShot(100, self.check_spotdl)
 
-    def apply_dark_theme(self):
-        """Apply polished dark theme"""
-        self.setStyleSheet("""
-            QMainWindow, QWidget {
-                background-color: #1a1a1a;
-                color: #e0e0e0;
-                font-family: 'Segoe UI', Arial, sans-serif;
-                font-size: 10pt;
-            }
-            
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                padding: 5px 10px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #45a049; }
-            QPushButton:pressed { background-color: #3d8b40; }
-            QPushButton:disabled { background-color: #2b2b2b; color: #555; }
-            
-            QLineEdit, QTextEdit {
-                background-color: #252525;
-                color: #e0e0e0;
-                border: 1px solid #333;
-                border-radius: 4px;
-                padding: 5px;
-                selection-background-color: #4CAF50;
-            }
-            QLineEdit:focus, QTextEdit:focus { border: 1px solid #4CAF50; }
-            QLineEdit:read-only { background-color: #1e1e1e; color: #888; }
-            
-            QComboBox {
-                background-color: #252525;
-                color: #e0e0e0;
-                border: 1px solid #333;
-                border-radius: 4px;
-                padding: 4px 8px;
-                min-height: 22px;
-            }
-            QComboBox:hover { border: 1px solid #4CAF50; }
-            QComboBox::drop-down { border: none; width: 20px; }
-            QComboBox::down-arrow {
-                image: none;
-                border-left: 4px solid transparent;
-                border-right: 4px solid transparent;
-                border-top: 5px solid #888;
-                margin-right: 6px;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #252525;
-                color: #e0e0e0;
-                selection-background-color: #4CAF50;
-                border: 1px solid #333;
-            }
-            
-            QCheckBox {
-                color: #e0e0e0;
-                spacing: 5px;
-            }
-            QCheckBox::indicator {
-                width: 14px; height: 14px;
-                border: 1px solid #444;
-                border-radius: 3px;
-                background-color: #252525;
-            }
-            QCheckBox::indicator:hover { border: 1px solid #4CAF50; }
-            QCheckBox::indicator:checked {
-                background-color: #4CAF50;
-                border: 1px solid #4CAF50;
-            }
-            
-            QSlider::groove:horizontal {
-                background-color: #252525;
-                height: 6px;
-                border-radius: 3px;
-            }
-            QSlider::handle:horizontal {
-                background-color: #4CAF50;
-                width: 14px; height: 14px;
-                margin: -4px 0;
-                border-radius: 7px;
-            }
-            QSlider::sub-page:horizontal {
-                background-color: #4CAF50;
-                border-radius: 3px;
-            }
-            
-            QScrollBar:vertical {
-                background-color: #1a1a1a;
-                width: 8px;
-                border-radius: 4px;
-            }
-            QScrollBar::handle:vertical {
-                background-color: #444;
-                border-radius: 4px;
-                min-height: 30px;
-            }
-            QScrollBar::handle:vertical:hover { background-color: #4CAF50; }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
-            
-            QScrollBar:horizontal {
-                background-color: #1a1a1a;
-                height: 8px;
-                border-radius: 4px;
-            }
-            QScrollBar::handle:horizontal {
-                background-color: #444;
-                border-radius: 4px;
-                min-width: 30px;
-            }
-            QScrollBar::handle:horizontal:hover { background-color: #4CAF50; }
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
-            
-            QSplitter::handle {
-                background-color: #333;
-            }
-            QSplitter::handle:hover { background-color: #4CAF50; }
-            QSplitter::handle:horizontal { width: 3px; }
-            QSplitter::handle:vertical { height: 3px; }
-            
-            QFrame { background-color: transparent; }
-            QLabel { color: #e0e0e0; background: transparent; }
-        """)
 
     def create_sidebar(self):
         """Create compact sidebar"""
@@ -288,41 +152,24 @@ class SpotDLGUI(QMainWindow):
         self.open_folder_btn.clicked.connect(self.open_download_folder)
         layout.addWidget(self.open_folder_btn)
 
-    def load_settings(self):
-        default_settings = {
-            "format": "mp3", "bitrate": "320k",
-            "playlist_output": "{list-name}/{list-position} - {artists} - {title}.{output-ext}",
-            "threads": "4",
-            "output": "{album-artist}/{year} - {album}/{track-number} - {title}.{output-ext}",
-            "download_folder": str(Path.home() / "Music"),
-            "create_folder_per_url": True,
-            "auto_download": True,
-            "auto_clear_completed": False
-        }
-        if self.config_file.exists():
-            try:
-                with open(self.config_file, 'r') as f:
-                    self.settings = {**default_settings, **json.load(f)}
-            except:
-                self.settings = default_settings
-        else:
-            self.settings = default_settings
-
     def save_settings(self):
         try:
-            self.settings["format"] = self.format_combo.currentText()
-            self.settings["bitrate"] = self.bitrate_combo.currentText()
-            self.settings["threads"] = str(self.threads_slider.value())
-            self.settings["output"] = self.template_entry.text()
-            self.settings["playlist_output"] = self.playlist_template_entry.text()
-            self.settings["download_folder"] = self.folder_entry.text()
-            self.settings["create_folder_per_url"] = self.folder_per_url_check.isChecked()
-            self.settings["auto_download"] = self.auto_download_check.isChecked()
-            self.settings["auto_clear_completed"] = self.auto_clear_queue_check.isChecked()
+            self.config_manager.update({
+                "format": self.format_combo.currentText(),
+                "bitrate": self.bitrate_combo.currentText(),
+                "threads": str(self.threads_slider.value()),
+                "output": self.template_entry.text(),
+                "playlist_output": self.playlist_template_entry.text(),
+                "download_folder": self.folder_entry.text(),
+                "create_folder_per_url": self.folder_per_url_check.isChecked(),
+                "auto_download": self.auto_download_check.isChecked(),
+                "auto_clear_completed": self.auto_clear_queue_check.isChecked()
+            })
 
-            with open(self.config_file, 'w') as f:
-                json.dump(self.settings, f, indent=2)
-            self.log_to_queue("✅ Settings saved\n")
+            if self.config_manager.save_settings():
+                self.log_to_queue("✅ Settings saved\n")
+            else:
+                QMessageBox.critical(self, "Error", "Failed to save settings")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save settings: {e}")
 
@@ -1132,11 +979,11 @@ class SpotDLGUI(QMainWindow):
             'format': self.format_combo.currentText(),
             'bitrate': self.bitrate_combo.currentText(),
             'threads': int(self.threads_slider.value()),
-            'template': self.playlist_template_entry.text() if self.is_playlist(query) else self.template_entry.text(),
+            'template': self.playlist_template_entry.text() if is_playlist(query) else self.template_entry.text(),
             'download_folder': self.folder_entry.text(),
             'folder_per_url': self.folder_per_url_check.isChecked(),
-            'is_playlist_url': self.is_playlist(query),
-            'is_album_url': self.is_album(query),
+            'is_playlist_url': is_playlist(query),
+            'is_album_url': is_album(query),
             'preload': self.preload_check.isChecked(),
             'sponsor_block': self.sponsor_block_check.isChecked(),
             'skip_explicit': self.skip_explicit_check.isChecked(),
@@ -1276,7 +1123,7 @@ class SpotDLGUI(QMainWindow):
 
         if folder_per_url:
             name = metadata['name'] if metadata else query
-            download_folder = os.path.join(download_folder, self.sanitize_folder_name(name))
+            download_folder = os.path.join(download_folder, sanitize_folder_name(name))
 
         cmd = ["spotdl", query, "--format", format_val, "--bitrate", bitrate_val,
                "--threads", threads_val, "--output", template_val]
@@ -1363,58 +1210,26 @@ class SpotDLGUI(QMainWindow):
         if not query:
             self.command_entry.clear()
             return
-        template = self.playlist_template_entry.text() if self.is_playlist(query) else self.template_entry.text()
+        template = self.playlist_template_entry.text() if is_playlist(query) else self.template_entry.text()
         self.command_entry.setText(f"spotdl {query} --format {self.format_combo.currentText()} --bitrate {self.bitrate_combo.currentText()} --output \"{template}\"")
 
     def toggle_clipboard_monitoring(self, state):
-        self.clipboard_monitoring_enabled = state == Qt.Checked.value or state == Qt.Checked
-        if self.clipboard_monitoring_enabled and not self.clipboard_connected:
-            self.last_clipboard_text = self.clipboard.text()
-            self.clipboard.dataChanged.connect(self.check_clipboard)
-            self.clipboard_connected = True
-        elif not self.clipboard_monitoring_enabled and self.clipboard_connected:
-            try: self.clipboard.dataChanged.disconnect(self.check_clipboard)
-            except: pass
-            self.clipboard_connected = False
+        enabled = state == Qt.Checked.value or state == Qt.Checked
+        if enabled:
+            self.clipboard_monitor.enable()
+        else:
+            self.clipboard_monitor.disable()
 
-    def check_clipboard(self):
-        if not self.clipboard_monitoring_enabled:
-            return
-        text = self.clipboard.text().strip()
-        if text and text != self.last_clipboard_text:
-            self.last_clipboard_text = text
-            if self.is_valid_music_url(text):
-                self.url_entry.setText(text)
-                self.log_to_queue(f"📋 Link detected: {text[:50]}...\n")
-                self.flash_taskbar()
-
-    def is_valid_music_url(self, t):
-        t = t.lower()
-        return ('spotify.com/' in t and any(x in t for x in ['track', 'album', 'playlist', 'artist'])) or \
-               'youtube.com/watch' in t or 'youtu.be/' in t or 'youtube.com/playlist' in t
-
-    def is_playlist(self, url):
-        u = url.lower()
-        return ('spotify.com' in u and '/playlist/' in u) or 'youtube.com/playlist' in u or url.strip() in ['all-user-playlists', 'all-saved-playlists']
-
-    def is_album(self, url):
-        return 'spotify.com' in url.lower() and '/album/' in url.lower()
-
-    def get_content_type(self, url):
-        u = url.lower()
-        if self.is_playlist(url): return "playlist"
-        if self.is_album(url): return "album"
-        if "/track/" in u: return "track"
-        return "unknown"
+    def _on_clipboard_url_detected(self, url):
+        """Handle URL detected from clipboard"""
+        self.url_entry.setText(url)
+        self.log_to_queue(f"📋 Link detected: {url[:50]}...\n")
+        self.flash_taskbar()
 
     def get_spotify_metadata(self, url):
         try: return get_metadata_handler().get_metadata(url)
         except: return None
 
-    def sanitize_folder_name(self, name):
-        special = {"saved": "Liked Songs", "all-user-playlists": "All Playlists"}
-        if name in special: return special[name]
-        return "".join(c if c.isalnum() or c in " -_'(),." else "_" for c in name).strip()[:80] or "Download"
 
     def check_spotdl_installation(self):
         try:

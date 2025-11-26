@@ -1,5 +1,21 @@
 # Changelog
 
+## v2.3.1 - Bug Fixes (2025-11-26)
+
+### Bug Fixes
+1. **Auto-download toggle**: Now works correctly - downloads won't start when disabled
+2. **Progress counter**: Fixed duplicate file counting (0/X) and double-counting (2X/X)
+3. **Vertical splitter**: Relaxed minimum height limits for better resizing
+4. **Tooltips**: Restored all tooltips that were missing after refactoring
+
+### Technical Details
+- queue_manager no longer auto-starts worker (MainWindow controls this)
+- Controller counts both "Downloaded" and "Skipped" messages
+- Uses startswith() to prevent double-counting progress lines
+- Reduced queue cards min height from 120→60, log from 80→40
+
+---
+
 ## v2.3 - Architecture Refactoring (2025-11-26)
 
 ### Major Changes

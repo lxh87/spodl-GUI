@@ -65,6 +65,7 @@ class DownloadPanel(QWidget):
 
         self.clipboard_monitor_check = QCheckBox("Auto-detect")
         self.clipboard_monitor_check.setStyleSheet("font-size: 8pt;")
+        self.clipboard_monitor_check.setToolTip("Automatically detect music URLs copied to clipboard")
         self.clipboard_monitor_check.stateChanged.connect(
             lambda state: self.clipboard_monitoring_changed.emit(
                 state == 2  # Qt.Checked value
@@ -78,6 +79,7 @@ class DownloadPanel(QWidget):
         url_row.setSpacing(4)
         self.url_entry = QLineEdit()
         self.url_entry.setPlaceholderText("Paste Spotify/YouTube URL...")
+        self.url_entry.setToolTip("Enter Spotify/YouTube URL, search query, or special keywords (saved, all-user-playlists, all-user-followed-artists)")
         self.url_entry.setFixedHeight(28)
         self.url_entry.textChanged.connect(lambda: self.settings_changed.emit())
         url_row.addWidget(self.url_entry)
@@ -85,6 +87,7 @@ class DownloadPanel(QWidget):
         paste_btn = QPushButton("📋")
         paste_btn.setFixedSize(28, 28)
         paste_btn.setStyleSheet("padding: 0; font-size: 11pt;")
+        paste_btn.setToolTip("Paste URL from clipboard")
         paste_btn.clicked.connect(self._paste_url)
         url_row.addWidget(paste_btn)
         url_layout.addLayout(url_row)
@@ -96,6 +99,11 @@ class DownloadPanel(QWidget):
         quick_label.setStyleSheet("color: #666; font-size: 8pt;")
         quick_row.addWidget(quick_label)
 
+        quick_tooltips = {
+            "Liked": "Download all your liked/saved songs",
+            "Playlists": "Download all your playlists",
+            "Artists": "Download all songs from artists you follow"
+        }
         for text, val in [("Liked", "saved"), ("Playlists", "all-user-playlists"),
                           ("Artists", "all-user-followed-artists")]:
             btn = QPushButton(text)
@@ -107,6 +115,7 @@ class DownloadPanel(QWidget):
                 QPushButton:hover { background-color: #444; }
             """)
             btn.setFixedHeight(22)
+            btn.setToolTip(quick_tooltips[text])
             btn.clicked.connect(lambda checked, v=val: self.url_entry.setText(v))
             quick_row.addWidget(btn)
         quick_row.addStretch()
@@ -138,6 +147,7 @@ class DownloadPanel(QWidget):
         self.format_combo = QComboBox()
         self.format_combo.addItems(["mp3", "flac", "ogg", "opus", "m4a", "wav"])
         self.format_combo.setCurrentText(self.settings.get("format", "mp3"))
+        self.format_combo.setToolTip("Audio format (mp3=most compatible, flac=lossless)")
         self.format_combo.setFixedHeight(26)
         self.format_combo.currentTextChanged.connect(lambda: self.settings_changed.emit())
         fmt_box.addWidget(self.format_combo)
@@ -152,6 +162,7 @@ class DownloadPanel(QWidget):
         self.bitrate_combo = QComboBox()
         self.bitrate_combo.addItems(["auto", "320k", "256k", "192k", "128k"])
         self.bitrate_combo.setCurrentText(self.settings.get("bitrate", "320k"))
+        self.bitrate_combo.setToolTip("Audio quality (320k=highest, auto=match source)")
         self.bitrate_combo.setFixedHeight(26)
         self.bitrate_combo.currentTextChanged.connect(lambda: self.settings_changed.emit())
         br_box.addWidget(self.bitrate_combo)
@@ -165,11 +176,17 @@ class DownloadPanel(QWidget):
         checks_grid.setContentsMargins(0, 2, 0, 0)
 
         self.preload_check = QCheckBox("Preload URLs")
+        self.preload_check.setToolTip("Preload metadata before downloading")
         self.sponsor_block_check = QCheckBox("Skip Sponsors")
+        self.sponsor_block_check.setToolTip("Remove sponsor segments from music")
         self.skip_explicit_check = QCheckBox("Skip Explicit")
+        self.skip_explicit_check.setToolTip("Skip songs marked as explicit")
         self.generate_lrc_check = QCheckBox("Generate LRC")
+        self.generate_lrc_check.setToolTip("Generate synced lyrics file (.lrc)")
         self.playlist_numbering_check = QCheckBox("Playlist #")
+        self.playlist_numbering_check.setToolTip("Add playlist position number to filename")
         self.folder_per_url_check = QCheckBox("Folder per URL")
+        self.folder_per_url_check.setToolTip("Create separate folder for each playlist/album")
         self.folder_per_url_check.setChecked(self.settings.get("create_folder_per_url", True))
 
         for i, cb in enumerate([self.preload_check, self.sponsor_block_check,
@@ -206,6 +223,7 @@ class DownloadPanel(QWidget):
             QPushButton:hover { background-color: #444; }
         """)
         copy_btn.setFixedHeight(16)
+        copy_btn.setToolTip("Copy command to clipboard")
         copy_btn.clicked.connect(self._copy_command)
         cmd_header.addWidget(copy_btn)
         cmd_layout.addLayout(cmd_header)
@@ -238,6 +256,7 @@ class DownloadPanel(QWidget):
             QPushButton:hover { background-color: #45a049; }
             QPushButton:pressed { background-color: #3d8b40; }
         """)
+        self.add_job_btn.setToolTip("Add download to queue")
         self.add_job_btn.clicked.connect(self._on_add_job)
         layout.addWidget(self.add_job_btn)
 

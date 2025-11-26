@@ -197,9 +197,16 @@ class DownloadController:
                         total_songs = int(match.group(1))
                         update_song_count(queue_id, 0, total_songs)
 
-                # Parse "Downloaded" message
-                if "Downloaded" in line and '"' in line:
+                # Parse "Downloaded" message (completed download)
+                if line.strip().startswith("Downloaded") and '"' in line:
                     match = re.search(r'Downloaded "([^"]+)"', line)
+                    if match:
+                        song_name = match.group(1)
+                        update_current_song(queue_id, song_name)
+
+                # Parse "Skipping" message (already exists/duplicate)
+                elif line.strip().startswith("Skipping") and '"' in line:
+                    match = re.search(r'Skipping "([^"]+)"', line)
                     if match:
                         song_name = match.group(1)
                         update_current_song(queue_id, song_name)

@@ -78,6 +78,7 @@ class QueuePanel(QWidget):
             QPushButton:disabled { background-color: #2b2b2b; color: #555; }
         """)
         self.start_btn.setFixedHeight(24)
+        self.start_btn.setToolTip("Start processing downloads from queue")
         self.start_btn.clicked.connect(self.start_queue_clicked.emit)
         self.start_btn.setEnabled(False)
         controls_layout.addWidget(self.start_btn)
@@ -89,6 +90,7 @@ class QueuePanel(QWidget):
             QPushButton:disabled { background-color: #2b2b2b; color: #555; }
         """)
         self.pause_btn.setFixedHeight(24)
+        self.pause_btn.setToolTip("Pause current download")
         self.pause_btn.clicked.connect(self.pause_queue_clicked.emit)
         self.pause_btn.setEnabled(False)
         controls_layout.addWidget(self.pause_btn)
@@ -99,6 +101,7 @@ class QueuePanel(QWidget):
             QPushButton:hover { background-color: #555; }
         """)
         self.clear_btn.setFixedHeight(24)
+        self.clear_btn.setToolTip("Clear completed downloads from queue")
         self.clear_btn.clicked.connect(self.clear_completed_clicked.emit)
         controls_layout.addWidget(self.clear_btn)
 
@@ -107,6 +110,7 @@ class QueuePanel(QWidget):
         # Checkboxes
         self.auto_download_check = QCheckBox("Auto-download")
         self.auto_download_check.setStyleSheet("font-size: 8pt;")
+        self.auto_download_check.setToolTip("Automatically start downloads when added to queue")
         self.auto_download_check.setChecked(auto_download)
         self.auto_download_check.stateChanged.connect(
             lambda state: self.auto_download_changed.emit(state == Qt.Checked.value or state == Qt.Checked)
@@ -115,6 +119,7 @@ class QueuePanel(QWidget):
 
         self.auto_clear_queue_check = QCheckBox("Auto-clear")
         self.auto_clear_queue_check.setStyleSheet("font-size: 8pt;")
+        self.auto_clear_queue_check.setToolTip("Automatically remove completed downloads after 5 seconds")
         self.auto_clear_queue_check.setChecked(auto_clear)
         self.auto_clear_queue_check.stateChanged.connect(
             lambda state: self.auto_clear_changed.emit(state == Qt.Checked.value or state == Qt.Checked)
@@ -134,7 +139,7 @@ class QueuePanel(QWidget):
 
         # Queue cards area
         queue_container = QWidget()
-        queue_container.setMinimumHeight(120)
+        queue_container.setMinimumHeight(60)  # Reduced from 120 for more flexibility
         queue_layout = QVBoxLayout(queue_container)
         queue_layout.setContentsMargins(0, 0, 0, 0)
 
@@ -162,7 +167,7 @@ class QueuePanel(QWidget):
 
         # Log section
         log_container = QWidget()
-        log_container.setMinimumHeight(80)
+        log_container.setMinimumHeight(40)  # Reduced from 80 for more flexibility
         log_layout = QVBoxLayout(log_container)
         log_layout.setContentsMargins(0, 0, 0, 0)
         log_layout.setSpacing(2)

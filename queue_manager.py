@@ -42,7 +42,11 @@ class DownloadQueueManager:
 
     def add_to_queue(self, item: QueueItem):
         """
-        Add item to queue and start worker if needed.
+        Add item to queue.
+
+        Note: Does NOT automatically start the worker - the GUI must call
+        start_worker() if auto-download is enabled. This allows the GUI
+        to control when downloads start.
 
         Args:
             item: QueueItem to add to queue
@@ -58,9 +62,7 @@ class DownloadQueueManager:
             f"➕ Added to queue (position {queue_position}): {item.metadata.get('name', item.query[:50])}\n"
         )
 
-        # Start worker if not running
-        if not self.running:
-            self.start_worker()
+        # Note: GUI is responsible for starting worker based on auto-download setting
 
     def start_worker(self):
         """

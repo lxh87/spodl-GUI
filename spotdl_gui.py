@@ -27,13 +27,10 @@ from queue_item import QueueItem
 from queue_manager import DownloadQueueManager
 
 # Import GUI modules
-from gui.utils import (
-    ThreadSafeLogger, ClipboardMonitor,
-    is_valid_music_url, is_playlist, is_album,
-    get_content_type, sanitize_folder_name
-)
+from gui.utils import ThreadSafeLogger, ClipboardMonitor, is_playlist
 from gui.theme import get_dark_theme_stylesheet
 from gui.config import ConfigManager
+from gui.controller import DownloadController
 
 # Lazy import metadata handler
 _metadata_handler = None
@@ -93,6 +90,7 @@ class SpotDLGUI(QMainWindow):
         self.clipboard_monitor = ClipboardMonitor()
         self.clipboard_monitor.url_detected.connect(self._on_clipboard_url_detected)
         self.network_manager = QNetworkAccessManager()
+        self.download_controller = DownloadController(self.get_spotify_metadata)
 
         self.create_main_tab()
         self.create_settings_tab()
@@ -1108,73 +1106,51 @@ class SpotDLGUI(QMainWindow):
                             template_val, download_folder, folder_per_url,
                             is_playlist_url, is_album_url, preload, sponsor_block,
                             skip_explicit, generate_lrc, playlist_numbering):
-        metadata = None
-        if is_playlist_url or is_album_url:
-            self.log_to_queue("🔍 Fetching metadata...\n")
-            metadata = self.get_spotify_metadata(query)
-            if metadata:
-                self.log_to_queue(f"✅ {metadata.get('name', 'Unknown')}\n")
-                artists = ', '.join(metadata.get('artists', [])) if isinstance(metadata.get('artists'), list) else metadata.get('artist', 'Unknown')
-                self.update_metadata_signal.emit(queue_id, {
-                    'name': metadata.get('name', 'Unknown'),
-                    'artist': artists,
-                    'image_url': metadata.get('cover_url', metadata.get('image_url', ''))
-                })
+        """Prepare and execute download using DownloadController"""
+        settings = {
+            'format': format_val,
+            'bitrate': bitrate_val,
+            'threads': threads_val,
+            'template': template_val,
+            'download_folder': download_folder,
+            'folder_per_url': folder_per_url,
+            'is_playlist_url': is_playlist_url,
+            'is_album_url': is_album_url,
+            'preload': preload,
+            'sponsor_block': sponsor_block,
+            'skip_explicit': skip_explicit,
+            'generate_lrc': generate_lrc,
+            'playlist_numbering': playlist_numbering
+        }
 
-        if folder_per_url:
-            name = metadata['name'] if metadata else query
-            download_folder = os.path.join(download_folder, sanitize_folder_name(name))
+        callbacks = {
+            'log': self.log_to_queue,
+            'update_metadata': lambda qid, meta: self.update_metadata_signal.emit(qid, meta),
+            'update_progress': lambda qid, pct: self.update_progress_signal.emit(qid, pct),
+            'update_song_count': lambda qid, cur, tot: self.update_song_count_signal.emit(qid, cur, tot),
+            'update_current_song': lambda qid, song: self.update_current_song_signal.emit(qid, song),
+            'on_complete': self._on_download_complete,
+            'on_error': self._on_download_error
+        }
 
-        cmd = ["spotdl", query, "--format", format_val, "--bitrate", bitrate_val,
-               "--threads", threads_val, "--output", template_val]
-        if preload: cmd.append("--preload")
-        if sponsor_block: cmd.append("--sponsor-block")
-        if skip_explicit: cmd.append("--skip-explicit")
-        if generate_lrc: cmd.append("--generate-lrc")
-        if playlist_numbering: cmd.append("--playlist-numbering")
+        self.download_controller.prepare_and_download(queue_id, query, settings, callbacks)
 
-        self.update_progress_signal.emit(queue_id, 5)
-        self.run_download(queue_id, cmd, download_folder)
+    def _on_download_complete(self, queue_id):
+        """Handle successful download completion"""
+        if queue_id in self.queue_items:
+            card = self.queue_items[queue_id]
+            card.song_label.setText("✅ Done!")
+            card.song_label.setStyleSheet("font-size: 8px; color: #4CAF50; font-weight: bold;")
 
-    def run_download(self, queue_id, cmd, download_folder):
-        import re
-        try:
-            os.makedirs(download_folder, exist_ok=True)
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                       text=True, bufsize=1, cwd=download_folder)
-
-            for line in process.stdout:
-                self.log_to_queue(line)
-                if "Found" in line and "song" in line:
-                    match = re.search(r'Found (\d+) song', line)
-                    if match:
-                        self.update_song_count_signal.emit(queue_id, 0, int(match.group(1)))
-                if "Downloaded" in line and '"' in line:
-                    match = re.search(r'Downloaded "([^"]+)"', line)
-                    if match:
-                        self.update_current_song_signal.emit(queue_id, match.group(1))
-
-            process.wait()
-            ts = datetime.now().strftime("%H:%M:%S")
-
-            if process.returncode == 0:
-                self.log_to_queue(f"[{ts}] ✅ Complete!\n")
-                self.update_progress_signal.emit(queue_id, 100)
-                if queue_id in self.queue_items:
-                    card = self.queue_items[queue_id]
-                    card.song_label.setText("✅ Done!")
-                    card.song_label.setStyleSheet("font-size: 8px; color: #4CAF50; font-weight: bold;")
-            else:
-                self.log_to_queue(f"[{ts}] ❌ Failed\n")
-                if queue_id in self.queue_items:
-                    card = self.queue_items[queue_id]
-                    card.song_label.setText("❌ Failed")
-                    card.song_label.setStyleSheet("font-size: 8px; color: #F44336;")
-                    card.status_label.setText("Failed")
-                    card.status_label.setStyleSheet("font-size: 7px; color: #F44336;")
-                    card.progress_bar.setStyleSheet("QProgressBar { border: none; background: #1a1a1a; } QProgressBar::chunk { background: #F44336; }")
-        except Exception as e:
-            self.log_to_queue(f"❌ Error: {e}\n")
+    def _on_download_error(self, queue_id):
+        """Handle download error"""
+        if queue_id in self.queue_items:
+            card = self.queue_items[queue_id]
+            card.song_label.setText("❌ Failed")
+            card.song_label.setStyleSheet("font-size: 8px; color: #F44336;")
+            card.status_label.setText("Failed")
+            card.status_label.setStyleSheet("font-size: 7px; color: #F44336;")
+            card.progress_bar.setStyleSheet("QProgressBar { border: none; background: #1a1a1a; } QProgressBar::chunk { background: #F44336; }")
 
     # =========================================================================
     # UTILITIES
@@ -1211,7 +1187,13 @@ class SpotDLGUI(QMainWindow):
             self.command_entry.clear()
             return
         template = self.playlist_template_entry.text() if is_playlist(query) else self.template_entry.text()
-        self.command_entry.setText(f"spotdl {query} --format {self.format_combo.currentText()} --bitrate {self.bitrate_combo.currentText()} --output \"{template}\"")
+        preview = self.download_controller.build_command_preview(
+            query,
+            self.format_combo.currentText(),
+            self.bitrate_combo.currentText(),
+            template
+        )
+        self.command_entry.setText(preview)
 
     def toggle_clipboard_monitoring(self, state):
         enabled = state == Qt.Checked.value or state == Qt.Checked

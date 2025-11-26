@@ -449,6 +449,26 @@ class MainWindow(QMainWindow):
             card.mark_failed()
 
     # =========================================================================
+    # QUEUE MANAGER COMPATIBILITY METHODS
+    # =========================================================================
+
+    def log_to_queue(self, message: str):
+        """Log message to queue (compatibility method for queue_manager)"""
+        self.queue_panel.log(message)
+
+    def update_queue_progress(self, queue_id: str, progress: int):
+        """Update queue card progress (compatibility method for queue_manager)"""
+        self.update_progress_signal.emit(queue_id, progress)
+
+    def update_queue_card_metadata(self, queue_id: str, metadata: dict):
+        """Update queue card metadata (compatibility method for queue_manager)"""
+        self.update_metadata_signal.emit(queue_id, metadata)
+
+    def remove_queue_card(self, queue_id: str):
+        """Remove queue card (compatibility method for queue_manager)"""
+        self.queue_panel.remove_queue_card(queue_id)
+
+    # =========================================================================
     # UTILITIES
     # =========================================================================
 

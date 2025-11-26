@@ -21,7 +21,7 @@ class DownloadPanel(QWidget):
     # Signals
     add_job_clicked = Signal(str, dict)  # query, settings
     clipboard_monitoring_changed = Signal(bool)
-    settings_changed = Signal()  # Emitted when any setting changes
+    settings_changed = Signal()  # Emitted when any setting changes (no parameters)
 
     def __init__(self, settings: Dict[str, Any], parent=None):
         """
@@ -79,7 +79,7 @@ class DownloadPanel(QWidget):
         self.url_entry = QLineEdit()
         self.url_entry.setPlaceholderText("Paste Spotify/YouTube URL...")
         self.url_entry.setFixedHeight(28)
-        self.url_entry.textChanged.connect(self.settings_changed.emit)
+        self.url_entry.textChanged.connect(lambda: self.settings_changed.emit())
         url_row.addWidget(self.url_entry)
 
         paste_btn = QPushButton("📋")
@@ -139,7 +139,7 @@ class DownloadPanel(QWidget):
         self.format_combo.addItems(["mp3", "flac", "ogg", "opus", "m4a", "wav"])
         self.format_combo.setCurrentText(self.settings.get("format", "mp3"))
         self.format_combo.setFixedHeight(26)
-        self.format_combo.currentTextChanged.connect(self.settings_changed.emit)
+        self.format_combo.currentTextChanged.connect(lambda: self.settings_changed.emit())
         fmt_box.addWidget(self.format_combo)
         format_row.addLayout(fmt_box)
 
@@ -153,7 +153,7 @@ class DownloadPanel(QWidget):
         self.bitrate_combo.addItems(["auto", "320k", "256k", "192k", "128k"])
         self.bitrate_combo.setCurrentText(self.settings.get("bitrate", "320k"))
         self.bitrate_combo.setFixedHeight(26)
-        self.bitrate_combo.currentTextChanged.connect(self.settings_changed.emit)
+        self.bitrate_combo.currentTextChanged.connect(lambda: self.settings_changed.emit())
         br_box.addWidget(self.bitrate_combo)
         format_row.addLayout(br_box)
 

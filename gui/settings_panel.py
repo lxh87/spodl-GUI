@@ -61,7 +61,7 @@ class SettingsPanel(QWidget):
         folder_row = QHBoxLayout()
         self.folder_entry = QLineEdit()
         self.folder_entry.setText(self.settings.get("download_folder", str(Path.home() / "Music")))
-        self.folder_entry.textChanged.connect(self.settings_changed.emit)
+        self.folder_entry.textChanged.connect(lambda: self.settings_changed.emit())
         folder_row.addWidget(self.folder_entry)
 
         browse_btn = QPushButton("Browse")
@@ -84,8 +84,8 @@ class SettingsPanel(QWidget):
         self.template_entry.setText(
             self.settings.get("output", "{album-artist}/{year} - {album}/{track-number} - {title}.{output-ext}")
         )
-        self.template_entry.textChanged.connect(self._update_template_example)
-        self.template_entry.textChanged.connect(self.settings_changed.emit)
+        self.template_entry.textChanged.connect(lambda: self._update_template_example())
+        self.template_entry.textChanged.connect(lambda: self.settings_changed.emit())
         song_layout.addWidget(self.template_entry)
 
         self.example_output_label = QLabel("Preview: The Weeknd/2020 - After Hours/03 - Blinding Lights.mp3")
@@ -111,8 +111,8 @@ class SettingsPanel(QWidget):
         self.playlist_template_entry.setText(
             self.settings.get("playlist_output", "{list-name}/{list-position} - {artists} - {title}.{output-ext}")
         )
-        self.playlist_template_entry.textChanged.connect(self._update_playlist_example)
-        self.playlist_template_entry.textChanged.connect(self.settings_changed.emit)
+        self.playlist_template_entry.textChanged.connect(lambda: self._update_playlist_example())
+        self.playlist_template_entry.textChanged.connect(lambda: self.settings_changed.emit())
         playlist_layout.addWidget(self.playlist_template_entry)
 
         self.playlist_example_label = QLabel("Preview: My Playlist/05 - The Weeknd - Blinding Lights.mp3")
@@ -140,7 +140,7 @@ class SettingsPanel(QWidget):
         self.threads_slider.setMaximum(16)
         self.threads_slider.setValue(int(self.settings.get("threads", "4")))
         self.threads_slider.valueChanged.connect(lambda v: self.threads_value_label.setText(str(v)))
-        self.threads_slider.valueChanged.connect(self.settings_changed.emit)
+        self.threads_slider.valueChanged.connect(lambda: self.settings_changed.emit())
         threads_row.addWidget(self.threads_slider)
 
         self.threads_value_label = QLabel(str(self.threads_slider.value()))

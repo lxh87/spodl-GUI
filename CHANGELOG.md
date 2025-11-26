@@ -1,3 +1,38 @@
+# Changelog
+
+## v2.3 - Architecture Refactoring (2025-11-26)
+
+### Major Changes
+- **Modular Architecture**: Complete refactoring from monolithic 1,449-line file into 9 focused modules
+- **Backward Compatible**: 100% compatible with v2.2 - same entry point, same UX
+- **Maintainability**: Each module now has a single responsibility for easier maintenance and testing
+
+### New Module Structure
+Created the following modules in the `gui/` package:
+- `utils.py` - Utility functions (ThreadSafeLogger, ClipboardMonitor, URL validation)
+- `theme.py` - Dark theme stylesheet management
+- `config.py` - ConfigManager for settings persistence
+- `controller.py` - DownloadController for command building and execution
+- `download_panel.py` - Left panel widget for download configuration
+- `queue_panel.py` - Right panel widget for queue management
+- `queue_card.py` - Individual queue card widget
+- `settings_panel.py` - Settings tab widget
+- `main_window.py` - Main application window integrating all panels
+
+### Technical Improvements
+- Clean separation of concerns between UI and business logic
+- Reusable widget components for better code organization
+- Signal-based communication between components
+- Thread-safe logging and UI updates
+- Simplified entry point (spotdl_gui.py reduced to 27 lines)
+
+### Documentation Cleanup
+- Removed 9 implementation/debug documentation files
+- Renamed CHANGELOG_UI.md to CHANGELOG.md
+- Kept essential documentation: README.md, QUICKSTART.md, TROUBLESHOOTING.md
+
+---
+
 # UI Improvements - Command Preview & Paste Button
 
 ## Changes Made

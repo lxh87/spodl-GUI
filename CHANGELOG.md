@@ -1,5 +1,29 @@
 # Changelog
 
+## v2.3.2 - UX Improvements (2025-11-27)
+
+### Improvements
+1. **Progress counting for duplicates**: Now correctly counts skipped files and LookupErrors
+2. **LookupError handling**: Shows warning when songs can't be found (⚠️ Could not find: [song])
+3. **Vertical splitter flexibility**: Further relaxed minimum heights (30px each) for better resizing
+4. **Queue card size increase**: All fonts increased by 2pt and card height increased to 70px
+   - Card height: 62→70px
+   - Album art: 52x52→60x60px
+   - Title font: 10px→12px
+   - Artist font: 9px→11px
+   - Song font: 8px→10px
+   - Count font: 9px→11px
+   - Status font: 7px→9px
+   - Progress bar height: 4→6px
+
+### Technical Details
+- Controller now parses "Skipping" messages without quotes
+- Controller now detects and logs "LookupError: No results found" messages
+- All dynamic font sizes in queue_card.py updated consistently
+- Minimum heights reduced from 60/40→30/30 for maximum splitter flexibility
+
+---
+
 ## v2.3.1 - Bug Fixes (2025-11-26)
 
 ### Bug Fixes

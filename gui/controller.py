@@ -205,10 +205,20 @@ class DownloadController:
                         update_current_song(queue_id, song_name)
 
                 # Parse "Skipping" message (already exists/duplicate)
-                elif line.strip().startswith("Skipping") and '"' in line:
-                    match = re.search(r'Skipping "([^"]+)"', line)
+                # Format: "Skipping Artist - Song (file already exists) (duplicate)"
+                elif line.strip().startswith("Skipping"):
+                    # Extract song name between "Skipping " and " (file"
+                    match = re.search(r'Skipping (.+?) \(file already exists\)', line)
                     if match:
                         song_name = match.group(1)
+                        update_current_song(queue_id, song_name)
+
+                # Parse "LookupError" message (song not found)
+                elif "LookupError: No results found for song:" in line:
+                    match = re.search(r'No results found for song: (.+)', line)
+                    if match:
+                        song_name = match.group(1).strip()
+                        log(f"⚠️ Could not find: {song_name}\n")
                         update_current_song(queue_id, song_name)
 
             # Wait for process to complete

@@ -46,20 +46,20 @@ class QueueCard(QFrame):
             }
             QFrame:hover { border-color: #4CAF50; }
         """)
-        self.setFixedHeight(62)
+        self.setFixedHeight(70)  # Increased from 62 for better visibility
 
         layout = QHBoxLayout(self)
         layout.setSpacing(8)
-        layout.setContentsMargins(5, 4, 8, 4)
+        layout.setContentsMargins(5, 5, 8, 5)
 
         # Album art
         self.art_label = QLabel()
-        self.art_label.setFixedSize(52, 52)
+        self.art_label.setFixedSize(60, 60)  # Increased from 52x52
         self.art_label.setStyleSheet("background-color: #1a1a1a; border-radius: 3px;")
         self.art_label.setAlignment(Qt.AlignCenter)
         self.art_label.setScaledContents(True)
         self.art_label.setText("🎵")
-        self.art_label.setFont(QFont("", 16))
+        self.art_label.setFont(QFont("", 18))  # Increased from 16
         layout.addWidget(self.art_label)
 
         # Info section
@@ -70,15 +70,15 @@ class QueueCard(QFrame):
         info_layout.setContentsMargins(0, 0, 0, 0)
 
         self.title_label = QLabel(metadata.get('name', 'Loading...'))
-        self.title_label.setStyleSheet("font-size: 10px; font-weight: bold; color: #FFF;")
+        self.title_label.setStyleSheet("font-size: 12px; font-weight: bold; color: #FFF;")  # Increased from 10px
         info_layout.addWidget(self.title_label)
 
         self.artist_label = QLabel(metadata.get('artist', 'Fetching...'))
-        self.artist_label.setStyleSheet("font-size: 9px; color: #888;")
+        self.artist_label.setStyleSheet("font-size: 11px; color: #888;")  # Increased from 9px
         info_layout.addWidget(self.artist_label)
 
         self.song_label = QLabel("⏳ Waiting...")
-        self.song_label.setStyleSheet("font-size: 8px; color: #555;")
+        self.song_label.setStyleSheet("font-size: 10px; color: #555;")  # Increased from 8px
         info_layout.addWidget(self.song_label)
 
         layout.addWidget(info, 1)
@@ -93,22 +93,22 @@ class QueueCard(QFrame):
 
         self.count_label = QLabel("—")
         self.count_label.setAlignment(Qt.AlignCenter)
-        self.count_label.setStyleSheet("font-size: 9px; color: #BBB; font-weight: bold;")
+        self.count_label.setStyleSheet("font-size: 11px; color: #BBB; font-weight: bold;")  # Increased from 9px
         progress_layout.addWidget(self.count_label)
 
         self.progress_bar = QProgressBar()
-        self.progress_bar.setFixedHeight(4)
+        self.progress_bar.setFixedHeight(6)  # Increased from 4 for better visibility
         self.progress_bar.setValue(0)
         self.progress_bar.setTextVisible(False)
         self.progress_bar.setStyleSheet("""
-            QProgressBar { border: none; border-radius: 2px; background: #1a1a1a; }
-            QProgressBar::chunk { background: #4CAF50; border-radius: 2px; }
+            QProgressBar { border: none; border-radius: 3px; background: #1a1a1a; }
+            QProgressBar::chunk { background: #4CAF50; border-radius: 3px; }
         """)
         progress_layout.addWidget(self.progress_bar)
 
         self.status_label = QLabel("Pending")
         self.status_label.setAlignment(Qt.AlignCenter)
-        self.status_label.setStyleSheet("font-size: 7px; color: #555;")
+        self.status_label.setStyleSheet("font-size: 9px; color: #555;")  # Increased from 7px
         progress_layout.addWidget(self.status_label)
 
         layout.addWidget(progress)
@@ -134,11 +134,11 @@ class QueueCard(QFrame):
             pixmap = QPixmap()
             if pixmap.loadFromData(data):
                 # Center-crop to square
-                scaled = pixmap.scaled(52, 52, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-                if scaled.width() > 52 or scaled.height() > 52:
-                    x = (scaled.width() - 52) // 2
-                    y = (scaled.height() - 52) // 2
-                    scaled = scaled.copy(x, y, 52, 52)
+                scaled = pixmap.scaled(60, 60, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)  # Increased from 52x52
+                if scaled.width() > 60 or scaled.height() > 60:
+                    x = (scaled.width() - 60) // 2
+                    y = (scaled.height() - 60) // 2
+                    scaled = scaled.copy(x, y, 60, 60)
                 self.art_label.setPixmap(scaled)
                 self.art_label.setText("")
         reply.deleteLater()
@@ -165,10 +165,10 @@ class QueueCard(QFrame):
         self.progress_bar.setValue(int(progress))
         if progress < 100:
             self.status_label.setText("Downloading")
-            self.status_label.setStyleSheet("font-size: 7px; color: #4CAF50;")
+            self.status_label.setStyleSheet("font-size: 9px; color: #4CAF50;")
         else:
             self.status_label.setText("Complete ✓")
-            self.status_label.setStyleSheet("font-size: 7px; color: #4CAF50; font-weight: bold;")
+            self.status_label.setStyleSheet("font-size: 9px; color: #4CAF50; font-weight: bold;")
 
     def update_current_song(self, song_name: str):
         """
@@ -179,7 +179,7 @@ class QueueCard(QFrame):
         """
         display = song_name[:28] + "..." if len(song_name) > 28 else song_name
         self.song_label.setText(f"🎵 {display}")
-        self.song_label.setStyleSheet("font-size: 8px; color: #4CAF50;")
+        self.song_label.setStyleSheet("font-size: 10px; color: #4CAF50;")
 
         # Increment completed count
         self.completed_songs += 1
@@ -200,21 +200,21 @@ class QueueCard(QFrame):
         self.completed_songs = completed
         self.count_label.setText(f"{completed}/{total}")
         self.song_label.setText("🔍 Scanning...")
-        self.song_label.setStyleSheet("font-size: 8px; color: #2196F3;")
+        self.song_label.setStyleSheet("font-size: 10px; color: #2196F3;")
         self.status_label.setText("Starting")
-        self.status_label.setStyleSheet("font-size: 7px; color: #2196F3;")
+        self.status_label.setStyleSheet("font-size: 9px; color: #2196F3;")
 
     def mark_complete(self):
         """Mark download as complete"""
         self.song_label.setText("✅ Done!")
-        self.song_label.setStyleSheet("font-size: 8px; color: #4CAF50; font-weight: bold;")
+        self.song_label.setStyleSheet("font-size: 10px; color: #4CAF50; font-weight: bold;")
 
     def mark_failed(self):
         """Mark download as failed"""
         self.song_label.setText("❌ Failed")
-        self.song_label.setStyleSheet("font-size: 8px; color: #F44336;")
+        self.song_label.setStyleSheet("font-size: 10px; color: #F44336;")
         self.status_label.setText("Failed")
-        self.status_label.setStyleSheet("font-size: 7px; color: #F44336;")
+        self.status_label.setStyleSheet("font-size: 9px; color: #F44336;")
         self.progress_bar.setStyleSheet(
             "QProgressBar { border: none; background: #1a1a1a; } "
             "QProgressBar::chunk { background: #F44336; }"

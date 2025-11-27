@@ -139,7 +139,7 @@ class QueuePanel(QWidget):
 
         # Queue cards area
         queue_container = QWidget()
-        queue_container.setMinimumHeight(60)  # Reduced from 120 for more flexibility
+        queue_container.setMinimumHeight(30)  # Reduced from 60 for maximum flexibility
         queue_layout = QVBoxLayout(queue_container)
         queue_layout.setContentsMargins(0, 0, 0, 0)
 
@@ -167,7 +167,7 @@ class QueuePanel(QWidget):
 
         # Log section
         log_container = QWidget()
-        log_container.setMinimumHeight(40)  # Reduced from 80 for more flexibility
+        log_container.setMinimumHeight(30)  # Reduced from 40 for maximum flexibility
         log_layout = QVBoxLayout(log_container)
         log_layout.setContentsMargins(0, 0, 0, 0)
         log_layout.setSpacing(2)

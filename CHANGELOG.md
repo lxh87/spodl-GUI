@@ -1,5 +1,21 @@
 # Changelog
 
+## v2.4.3 - App Icon Update (2025-11-27)
+
+### Visual Improvements
+
+1. **New Application Icon**
+   - Added custom icon featuring music note combined with download arrow
+   - Uses app's signature green color (#4CAF50) on dark background
+   - Modern, minimalist flat design suitable for desktop application
+   - Scalable design for various window sizes and system displays
+
+### Technical Details
+- `spotdl_gui.py`: Added `QIcon` import and `app.setWindowIcon(app_icon)` to load custom icon
+- `icon.png`: New 512x512px PNG icon file added to project root
+
+---
+
 ## v2.4.2 - UI/UX Improvements (2025-11-27)
 
 ### UI/UX Improvements

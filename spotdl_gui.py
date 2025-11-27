@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-SpotDL Desktop GUI v2.4.1
+SpotDL Desktop GUI v2.4.3
 A modern desktop interface for SpotDL - PySide6 version
 Refactored modular architecture
 """
 
 import sys
 from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QIcon
 from gui.main_window import MainWindow
 
 
@@ -14,6 +15,11 @@ def main():
     """Main entry point"""
     app = QApplication(sys.argv)
     app.setApplicationName("SpotDL GUI")
+    
+    # Set application icon
+    app_icon = QIcon("icon.png")
+    app.setWindowIcon(app_icon)
+    
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

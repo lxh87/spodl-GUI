@@ -7,8 +7,8 @@ import time
 import threading
 from unittest.mock import Mock, MagicMock, patch
 from datetime import datetime
-from queue_item import QueueItem
-from queue_manager import DownloadQueueManager
+from core.queue_item import QueueItem
+from core.queue_manager import DownloadQueueManager
 
 
 class MockGUI:

@@ -1,5 +1,30 @@
 # Changelog
 
+## v2.4.0 - Project Reorganization (2025-11-27)
+
+### Project Structure
+- **New `core/` package**: Created for backend logic (queue management, metadata handling)
+- **Cleaned up root directory**: Removed unused legacy files
+- **Better separation**: Frontend (gui/) and backend (core/) are now clearly separated
+
+### Files Moved to `core/`
+- `queue_manager.py` - Download queue management
+- `queue_item.py` - Queue item data structure
+- `metadata_handler.py` - Spotify metadata fetching
+
+### Files Deleted
+- `matching_handler.py` - Unused legacy file
+- `spotdl_gui_ctk.py` - Old CustomTkinter version (54KB)
+- `test_queue_metadata_flow.py` - Obsolete test file
+
+### Technical Details
+- Updated all imports across gui/, core/, and tests/
+- Maintained git history with `git mv` for moved files
+- All tests updated to use `core.` imports
+- Application tested and confirmed working
+
+---
+
 ## v2.3.3 - UI/UX Fixes (2025-11-27)
 
 ### Improvements

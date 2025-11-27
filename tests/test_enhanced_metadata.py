@@ -11,7 +11,7 @@ Tests:
 """
 
 import logging
-from metadata_handler import SpotifyMetadataHandler, get_metadata, SPOTDL_AVAILABLE
+from core.metadata_handler import SpotifyMetadataHandler, get_metadata, SPOTDL_AVAILABLE
 
 # Configure logging
 logging.basicConfig(

@@ -16,8 +16,8 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont
 
 # Import queue management
-from queue_item import QueueItem
-from queue_manager import DownloadQueueManager
+from core.queue_item import QueueItem
+from core.queue_manager import DownloadQueueManager
 
 # Import GUI modules
 from gui.utils import ClipboardMonitor, is_playlist, is_album
@@ -37,7 +37,7 @@ def get_metadata_handler():
     """Lazy load metadata handler"""
     global _metadata_handler
     if _metadata_handler is None:
-        from metadata_handler import SpotifyMetadataHandler
+        from core.metadata_handler import SpotifyMetadataHandler
         _metadata_handler = SpotifyMetadataHandler()
     return _metadata_handler
 

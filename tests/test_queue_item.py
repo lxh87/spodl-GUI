@@ -4,7 +4,7 @@ Tests for QueueItem class
 
 import pytest
 from datetime import datetime, timedelta
-from queue_item import QueueItem
+from core.queue_item import QueueItem
 
 
 class TestQueueItemCreation:

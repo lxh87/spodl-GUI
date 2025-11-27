@@ -7,7 +7,7 @@ Manages download queue, processing items one at a time with pause/resume/cancel 
 import threading
 import time
 from typing import List, Optional, Dict, Any
-from queue_item import QueueItem
+from core.queue_item import QueueItem
 
 
 class DownloadQueueManager:

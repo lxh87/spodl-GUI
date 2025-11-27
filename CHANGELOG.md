@@ -1,5 +1,19 @@
 # Changelog
 
+## v2.3.3 - UI/UX Fixes (2025-11-27)
+
+### Improvements
+1. **Tooltip readability**: Tooltips now have white background with black text instead of dark grey
+2. **Progress counter accuracy**: Fixed counting for long song names that wrap across multiple lines
+3. **URL field clear button**: Added ✕ button to quickly clear the URL field
+
+### Technical Details
+- Added QToolTip styling to theme.py for better readability
+- Controller now handles wrapped "Downloaded" lines with fallback regex
+- Clear button added to download_panel.py next to paste button
+
+---
+
 ## v2.3.2 - UX Improvements (2025-11-27)
 
 ### Improvements

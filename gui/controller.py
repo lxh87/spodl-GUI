@@ -198,10 +198,15 @@ class DownloadController:
                         update_song_count(queue_id, 0, total_songs)
 
                 # Parse "Downloaded" message (completed download)
-                if line.strip().startswith("Downloaded") and '"' in line:
+                # Format: Downloaded "Song Name": URL (may wrap across lines)
+                if line.strip().startswith("Downloaded"):
+                    # Match everything between quotes, or up to colon if line wrapped
                     match = re.search(r'Downloaded "([^"]+)"', line)
+                    if not match:
+                        # Line might be wrapped, try to get partial song name
+                        match = re.search(r'Downloaded "(.+)', line)
                     if match:
-                        song_name = match.group(1)
+                        song_name = match.group(1).strip()
                         update_current_song(queue_id, song_name)
 
                 # Parse "Skipping" message (already exists/duplicate)

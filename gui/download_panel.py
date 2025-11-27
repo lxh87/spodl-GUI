@@ -84,6 +84,13 @@ class DownloadPanel(QWidget):
         self.url_entry.textChanged.connect(lambda: self.settings_changed.emit())
         url_row.addWidget(self.url_entry)
 
+        clear_btn = QPushButton("✕")
+        clear_btn.setFixedSize(28, 28)
+        clear_btn.setStyleSheet("padding: 0; font-size: 14pt; font-weight: bold; color: #888;")
+        clear_btn.setToolTip("Clear URL field")
+        clear_btn.clicked.connect(self._clear_url)
+        url_row.addWidget(clear_btn)
+
         paste_btn = QPushButton("📋")
         paste_btn.setFixedSize(28, 28)
         paste_btn.setStyleSheet("padding: 0; font-size: 11pt;")
@@ -264,6 +271,10 @@ class DownloadPanel(QWidget):
         """Paste URL from clipboard"""
         if text := QApplication.clipboard().text():
             self.url_entry.setText(text)
+
+    def _clear_url(self):
+        """Clear URL field"""
+        self.url_entry.clear()
 
     def _copy_command(self):
         """Copy command to clipboard"""

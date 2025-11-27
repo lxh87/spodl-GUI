@@ -85,6 +85,7 @@ class ClipboardMonitor(QObject):
 def is_valid_music_url(url: str) -> bool:
     """
     Check if URL is a valid music URL (Spotify or YouTube)
+    More strict check for auto-detection from clipboard
 
     Args:
         url: URL string to validate
@@ -92,21 +93,37 @@ def is_valid_music_url(url: str) -> bool:
     Returns:
         True if valid music URL, False otherwise
     """
+    url = url.strip()
     url_lower = url.lower()
+    
+    # Reject if it contains newlines (likely copied log text)
+    if '\n' in url or '\r' in url:
+        return False
+    
+    # Reject if too long (likely copied text with URL in it)
+    if len(url) > 300:
+        return False
+    
+    # Reject if it contains common log/error text
+    invalid_patterns = ['error', 'failed', 'skipping', 'downloaded', 'complete', 
+                        'traceback', 'exception', 'warning', '[', ']', '✅', '❌', '⚠']
+    for pattern in invalid_patterns:
+        if pattern in url_lower:
+            return False
 
-    # Spotify URLs
-    spotify_valid = 'spotify.com/' in url_lower and any(
-        keyword in url_lower for keyword in ['track', 'album', 'playlist', 'artist']
-    )
+    # Spotify URLs - must start with http/https and contain spotify.com
+    if 'spotify.com/' in url_lower:
+        if not url_lower.startswith(('http://', 'https://')):
+            return False
+        if any(keyword in url_lower for keyword in ['track', 'album', 'playlist', 'artist']):
+            return True
 
-    # YouTube URLs
-    youtube_valid = (
-        'youtube.com/watch' in url_lower or
-        'youtu.be/' in url_lower or
-        'youtube.com/playlist' in url_lower
-    )
+    # YouTube URLs - must start with http/https
+    if url_lower.startswith(('http://', 'https://')):
+        if 'youtube.com/watch' in url_lower or 'youtu.be/' in url_lower or 'youtube.com/playlist' in url_lower:
+            return True
 
-    return spotify_valid or youtube_valid
+    return False
 
 
 def is_playlist(url: str) -> bool:

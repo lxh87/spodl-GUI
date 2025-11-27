@@ -3,8 +3,8 @@ Queue Card Widget Module
 Individual queue card widget for displaying download progress
 """
 
-from PySide6.QtWidgets import QFrame, QLabel, QProgressBar, QVBoxLayout, QHBoxLayout, QWidget
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtWidgets import QFrame, QLabel, QProgressBar, QVBoxLayout, QHBoxLayout, QWidget, QPushButton
+from PySide6.QtCore import Qt, QUrl, Signal
 from PySide6.QtGui import QFont, QPixmap
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest
 from typing import Dict, Any, Optional
@@ -15,9 +15,12 @@ class QueueCard(QFrame):
     Widget representing a single download in the queue
     Displays album art, metadata, progress, and status
     """
+    
+    # Signal emitted when delete button is clicked
+    delete_clicked = Signal(str)  # queue_id
 
     def __init__(self, queue_id: str, metadata: Dict[str, Any],
-                 network_manager: QNetworkAccessManager, parent=None):
+                 network_manager: QNetworkAccessManager, is_paused: bool = False, parent=None):
         """
         Initialize queue card
 
@@ -25,6 +28,7 @@ class QueueCard(QFrame):
             queue_id: Unique identifier for this queue item
             metadata: Dictionary with name, artist, image_url
             network_manager: Shared network manager for loading images
+            is_paused: Whether the queue is currently paused
             parent: Parent widget
         """
         super().__init__(parent)
@@ -32,6 +36,11 @@ class QueueCard(QFrame):
         self.network_manager = network_manager
         self.total_songs = 0
         self.completed_songs = 0
+        self.skipped_songs = 0
+        self.is_downloading = False
+        self.is_complete = False
+        self.is_failed = False
+        self._is_paused = is_paused
 
         self._setup_ui(metadata)
 
@@ -77,8 +86,13 @@ class QueueCard(QFrame):
         self.artist_label.setStyleSheet("font-size: 11px; color: #888;")  # Increased from 9px
         info_layout.addWidget(self.artist_label)
 
-        self.song_label = QLabel("⏳ Waiting...")
-        self.song_label.setStyleSheet("font-size: 10px; color: #555;")  # Increased from 8px
+        # Initial status based on pause state
+        if self._is_paused:
+            self.song_label = QLabel("⏸ Queue paused - Press ▶ Start")
+            self.song_label.setStyleSheet("font-size: 10px; color: #FF9800;")
+        else:
+            self.song_label = QLabel("⏳ In queue...")
+            self.song_label.setStyleSheet("font-size: 10px; color: #555;")
         info_layout.addWidget(self.song_label)
 
         layout.addWidget(info, 1)
@@ -106,12 +120,41 @@ class QueueCard(QFrame):
         """)
         progress_layout.addWidget(self.progress_bar)
 
-        self.status_label = QLabel("Pending")
+        # Initial status based on pause state  
+        if self._is_paused:
+            self.status_label = QLabel("Paused")
+            self.status_label.setStyleSheet("font-size: 9px; color: #FF9800;")
+        else:
+            self.status_label = QLabel("Queued")
+            self.status_label.setStyleSheet("font-size: 9px; color: #555;")
         self.status_label.setAlignment(Qt.AlignCenter)
-        self.status_label.setStyleSheet("font-size: 9px; color: #555;")  # Increased from 7px
         progress_layout.addWidget(self.status_label)
 
         layout.addWidget(progress)
+
+        # Delete button - full height
+        self.delete_btn = QPushButton("✕")
+        self.delete_btn.setFixedWidth(28)
+        self.delete_btn.setSizePolicy(self.delete_btn.sizePolicy().horizontalPolicy(), 
+                                       self.delete_btn.sizePolicy().verticalPolicy())
+        self.delete_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #333;
+                color: #888;
+                border: none;
+                border-radius: 4px;
+                font-size: 14px;
+                font-weight: bold;
+                min-height: 44px;
+            }
+            QPushButton:hover {
+                color: #FFF;
+                background-color: #F44336;
+            }
+        """)
+        self.delete_btn.setToolTip("Remove from queue")
+        self.delete_btn.clicked.connect(lambda: self.delete_clicked.emit(self.queue_id))
+        layout.addWidget(self.delete_btn)
 
         # Load image if available
         if metadata.get('image_url'):
@@ -155,6 +198,29 @@ class QueueCard(QFrame):
         if metadata.get('image_url'):
             self.load_image(metadata['image_url'])
 
+    def set_paused_state(self, is_paused: bool):
+        """
+        Update card display based on queue paused state
+        Only affects pending items, not active downloads
+        
+        Args:
+            is_paused: Whether the queue is paused
+        """
+        self._is_paused = is_paused
+        
+        # Only update if not already downloading or finished
+        if not self.is_downloading and not self.is_complete and not self.is_failed:
+            if is_paused:
+                self.song_label.setText("⏸ Queue paused - Press ▶ Start")
+                self.song_label.setStyleSheet("font-size: 10px; color: #FF9800;")
+                self.status_label.setText("Paused")
+                self.status_label.setStyleSheet("font-size: 9px; color: #FF9800;")
+            else:
+                self.song_label.setText("⏳ In queue...")
+                self.song_label.setStyleSheet("font-size: 10px; color: #555;")
+                self.status_label.setText("Queued")
+                self.status_label.setStyleSheet("font-size: 9px; color: #555;")
+
     def update_progress(self, progress: int):
         """
         Update progress bar
@@ -162,6 +228,7 @@ class QueueCard(QFrame):
         Args:
             progress: Progress percentage (0-100)
         """
+        self.is_downloading = True
         self.progress_bar.setValue(int(progress))
         if progress < 100:
             self.status_label.setText("Downloading")
@@ -177,16 +244,46 @@ class QueueCard(QFrame):
         Args:
             song_name: Name of the song being downloaded
         """
+        self.is_downloading = True
         display = song_name[:28] + "..." if len(song_name) > 28 else song_name
         self.song_label.setText(f"🎵 {display}")
         self.song_label.setStyleSheet("font-size: 10px; color: #4CAF50;")
 
         # Increment completed count
         self.completed_songs += 1
+        self._update_count_display()
+
+    def update_skipped_song(self, song_name: str):
+        """
+        Update when a song is skipped (already exists)
+
+        Args:
+            song_name: Name of the song that was skipped
+        """
+        self.is_downloading = True
+        display = song_name[:25] + "..." if len(song_name) > 25 else song_name
+        self.song_label.setText(f"⏭️ {display}")
+        self.song_label.setStyleSheet("font-size: 10px; color: #FF9800;")
+        self.status_label.setText("Skipping")
+        self.status_label.setStyleSheet("font-size: 9px; color: #FF9800;")
+
+        # Increment both skipped and completed counts
+        self.skipped_songs += 1
+        self.completed_songs += 1
+        self._update_count_display()
+
+    def _update_count_display(self):
+        """Update the count label and progress bar"""
         if self.total_songs > 0:
             progress = int((self.completed_songs / self.total_songs) * 100)
             self.progress_bar.setValue(progress)
-            self.count_label.setText(f"{self.completed_songs}/{self.total_songs}")
+            
+            # Show skipped count if any
+            if self.skipped_songs > 0:
+                self.count_label.setText(f"{self.completed_songs}/{self.total_songs}")
+                self.count_label.setToolTip(f"{self.skipped_songs} skipped (already exist)")
+            else:
+                self.count_label.setText(f"{self.completed_songs}/{self.total_songs}")
 
     def update_song_count(self, completed: int, total: int):
         """
@@ -196,6 +293,7 @@ class QueueCard(QFrame):
             completed: Number of completed songs
             total: Total number of songs
         """
+        self.is_downloading = True
         self.total_songs = total
         self.completed_songs = completed
         self.count_label.setText(f"{completed}/{total}")
@@ -206,11 +304,35 @@ class QueueCard(QFrame):
 
     def mark_complete(self):
         """Mark download as complete"""
-        self.song_label.setText("✅ Done!")
-        self.song_label.setStyleSheet("font-size: 10px; color: #4CAF50; font-weight: bold;")
+        self.is_complete = True
+        self.is_downloading = False
+        self.progress_bar.setValue(100)
+        
+        # Check if all songs were skipped
+        if self.skipped_songs > 0 and self.skipped_songs == self.total_songs:
+            self.song_label.setText("⏭️ All skipped (already exist)")
+            self.song_label.setStyleSheet("font-size: 10px; color: #FF9800; font-weight: bold;")
+            self.status_label.setText("Skipped ✓")
+            self.status_label.setStyleSheet("font-size: 9px; color: #FF9800; font-weight: bold;")
+            self.progress_bar.setStyleSheet("""
+                QProgressBar { border: none; border-radius: 3px; background: #1a1a1a; }
+                QProgressBar::chunk { background: #FF9800; border-radius: 3px; }
+            """)
+        elif self.skipped_songs > 0:
+            self.song_label.setText(f"✅ Done ({self.skipped_songs} skipped)")
+            self.song_label.setStyleSheet("font-size: 10px; color: #4CAF50; font-weight: bold;")
+            self.status_label.setText("Complete ✓")
+            self.status_label.setStyleSheet("font-size: 9px; color: #4CAF50; font-weight: bold;")
+        else:
+            self.song_label.setText("✅ Done!")
+            self.song_label.setStyleSheet("font-size: 10px; color: #4CAF50; font-weight: bold;")
+            self.status_label.setText("Complete ✓")
+            self.status_label.setStyleSheet("font-size: 9px; color: #4CAF50; font-weight: bold;")
 
     def mark_failed(self):
         """Mark download as failed"""
+        self.is_failed = True
+        self.is_downloading = False
         self.song_label.setText("❌ Failed")
         self.song_label.setStyleSheet("font-size: 10px; color: #F44336;")
         self.status_label.setText("Failed")

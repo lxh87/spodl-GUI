@@ -135,9 +135,9 @@ def get_dark_theme_stylesheet() -> str:
         QLabel { color: #e0e0e0; background: transparent; }
 
         QToolTip {
-            background-color: white;
-            color: black;
-            border: 1px solid #ccc;
+            background-color: #333;
+            color: white;
+            border: 1px solid #555;
             border-radius: 4px;
             padding: 4px 8px;
             font-size: 9pt;

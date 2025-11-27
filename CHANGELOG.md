@@ -1,5 +1,69 @@
 # Changelog
 
+## v2.4.2 - UI/UX Improvements (2025-11-27)
+
+### UI/UX Improvements
+
+1. **Tooltips fixed**
+   - Dark background (#333) with white text for better readability
+   - Consistent 9pt font size across all tooltips
+
+2. **Clear URL button**
+   - Visible ✕ button inside the URL text field (right side)
+   - Hover effect with red highlight
+   - Properly styled within the input container
+
+3. **Delete job button**
+   - Added ✕ button on each queue card (full height, right side)
+   - Tall rectangle with rounded corners
+   - Turns red on hover
+   - Cancels download if active, removes from queue
+
+4. **Music folder button**
+   - Moved from sidebar to queue panel controls (more accessible)
+
+5. **Horizontal splitter**
+   - Removed max-width constraint, allowing more flexible resizing
+
+### Queue Status Improvements
+
+1. **Clearer pending job status**
+   - Shows "⏸ Queue paused - Press ▶ Start" when paused/auto-download off
+   - Shows "⏳ In queue..." when waiting normally
+   - No more confusing "Loading...", "Fetching...", "Waiting..."
+
+2. **Skipped songs detection (duplicates)**
+   - Properly counts skipped files across multi-line output
+   - Shows ⏭️ icon with orange color for skipped songs
+   - Final status shows "All skipped (already exist)" or "Done (X skipped)"
+   - Progress bar turns orange if all songs were skipped
+
+### Auto-Detection Improvements
+
+1. **Auto-add on link detection**
+   - Detected URLs are automatically added to queue
+   - Respects auto-download checkbox setting
+
+2. **Stricter URL validation**
+   - Rejects clipboard text with newlines, error keywords, or excessive length
+   - Prevents false positives from copied log text
+
+### Bug Fixes
+
+1. **Encoding fix**
+   - Subprocess uses UTF-8 with error replacement for Windows compatibility
+   - Fixes crashes when output contains emoji characters
+
+### Technical Details
+- `theme.py`: Updated QToolTip stylesheet with dark background and white text
+- `download_panel.py`: Embedded clear button inside URL field
+- `queue_panel.py`: Added music folder button, delete signal, and `update_all_cards_paused_state()` method
+- `queue_card.py`: Added delete button, paused state tracking, skipped songs counter, and visual states
+- `main_window.py`: Removed max-width, connected signals, auto-add logic, stricter validation
+- `controller.py`: UTF-8 encoding with error replacement for subprocess output
+
+---
+
 ## v2.4.0 - Project Reorganization (2025-11-27)
 
 ### Project Structure
@@ -109,153 +173,3 @@ Created the following modules in the `gui/` package:
 - Removed 9 implementation/debug documentation files
 - Renamed CHANGELOG_UI.md to CHANGELOG.md
 - Kept essential documentation: README.md, QUICKSTART.md, TROUBLESHOOTING.md
-
----
-
-# UI Improvements - Command Preview & Paste Button
-
-## Changes Made
-
-### 1. **URL Field - Added Paste Button** 📋
-- **Location**: Download tab, URL input field
-- **Design**: Clipboard icon (📋) button on the right side of URL field
-- **Function**: Pastes clipboard content directly into URL field
-- **Behavior**: Automatically updates command preview after pasting
-
-### 2. **Command Preview Section** 🖥️
-- **Location**: Download tab, below Download/Open Folder buttons
-- **Components**:
-  - Label: "Command Preview:"
-  - Read-only entry field showing the exact spotdl command
-  - Copy button (📄) on the right side
-
-### 3. **Command Preview Features**
-- **Real-time Updates**: Updates automatically when you change:
-  - URL/query
-  - Format (mp3, flac, etc.)
-  - Bitrate
-  - Threads
-  - Template (in Settings)
-  - Any checkbox options (Preload, Skip Explicit, etc.)
-
-- **Copy Functionality**:
-  - Click 📄 button to copy full command
-  - Visual feedback: Shows "✓" for 1 second after copying
-  - Command is copied to system clipboard
-
-- **Accurate Command**: Shows the exact command that will be executed, including:
-  ```
-  spotdl [URL] --format mp3 --bitrate 320k --threads 4 --output [template] [flags...]
-  ```
-
-## Visual Layout
-
-```
-┌─────────────────────────────────────────────────────────┐
-│ Spotify/YouTube URL or Query:                          │
-│ ┌──────────────────────────────────────────────┐ ┌───┐ │
-│ │ https://open.spotify.com/track/...          │ │📋 │ │
-│ └──────────────────────────────────────────────┘ └───┘ │
-│                                                         │
-│ [Quick Select Buttons]                                  │
-│                                                         │
-│ [Format/Bitrate Options]                               │
-│ [Advanced Options]                                      │
-│                                                         │
-│ ┌──────────────────────────────┐ ┌──────────────────┐ │
-│ │    ⬇️ Download                │ │  📁 Open Folder  │ │
-│ └──────────────────────────────┘ └──────────────────┘ │
-│                                                         │
-│ Command Preview:                                        │
-│ ┌──────────────────────────────────────────────┐ ┌───┐ │
-│ │ spotdl [url] --format mp3 --bitrate 320k... │ │📄 │ │
-│ └──────────────────────────────────────────────┘ └───┘ │
-└─────────────────────────────────────────────────────────┘
-```
-
-## Design Consistency
-
-- **Same design language** as URL field
-- **Icon-only buttons** (📋 and 📄) for compact layout
-- **Monospace font** for command preview (Consolas)
-- **Read-only field** prevents accidental editing
-- **Automatic updates** - no manual refresh needed
-
-## Use Cases
-
-### 1. Quick Copy-Paste Workflow
-```
-User: Copies Spotify URL
-  ↓
-Click 📋 (paste button)
-  ↓
-Command preview updates automatically
-  ↓
-Review command
-  ↓
-Click Download or copy command with 📄
-```
-
-### 2. Advanced Users
-```
-Adjust settings (format, bitrate, template)
-  ↓
-Watch command preview update in real-time
-  ↓
-Copy command with 📄
-  ↓
-Paste in terminal for manual execution
-```
-
-### 3. Learning Tool
-```
-New users can see exactly what spotdl command
-will be executed based on their GUI selections
-```
-
-## Technical Details
-
-### New Methods Added
-
-1. **`paste_url()`**
-   - Reads system clipboard
-   - Inserts into URL field
-   - Updates command preview
-
-2. **`copy_command()`**
-   - Copies command to clipboard
-   - Shows visual confirmation (✓)
-   - Resets after 1 second
-
-3. **`update_command_preview()`**
-   - Reads all current settings
-   - Builds exact command string
-   - Updates preview field
-   - Called on any setting change
-
-### Event Bindings
-
-The command preview updates automatically on:
-- URL field key release
-- Format dropdown change
-- Bitrate dropdown change
-- Threads slider change
-- Any checkbox toggle
-- Template changes in Settings
-- Save settings button click
-
-## Benefits
-
-✅ **Transparency**: Users see exactly what command runs
-✅ **Learning**: Helps users understand spotdl CLI
-✅ **Debugging**: Easy to copy and test commands manually
-✅ **Convenience**: One-click paste and copy
-✅ **Professional**: Matches modern CLI tool GUIs
-
-## Future Enhancements (Optional)
-
-- [ ] Add syntax highlighting to command preview
-- [ ] Add "Edit Command" mode for advanced users
-- [ ] Show output folder path in preview
-- [ ] Add command history dropdown
-- [ ] Export command to .bat/.sh file

@@ -61,11 +61,13 @@ class SettingsPanel(QWidget):
         folder_row = QHBoxLayout()
         self.folder_entry = QLineEdit()
         self.folder_entry.setText(self.settings.get("download_folder", str(Path.home() / "Music")))
+        self.folder_entry.setToolTip("Base folder where all downloads will be saved")
         self.folder_entry.textChanged.connect(lambda: self.settings_changed.emit())
         folder_row.addWidget(self.folder_entry)
 
         browse_btn = QPushButton("Browse")
         browse_btn.setStyleSheet("background-color: #333; padding: 5px 10px;")
+        browse_btn.setToolTip("Select download folder")
         browse_btn.clicked.connect(self._browse_folder)
         folder_row.addWidget(browse_btn)
         folder_layout.addLayout(folder_row)
@@ -84,6 +86,7 @@ class SettingsPanel(QWidget):
         self.template_entry.setText(
             self.settings.get("output", "{album-artist}/{year} - {album}/{track-number} - {title}.{output-ext}")
         )
+        self.template_entry.setToolTip("Template for individual song downloads")
         self.template_entry.textChanged.connect(lambda: self._update_template_example())
         self.template_entry.textChanged.connect(lambda: self.settings_changed.emit())
         song_layout.addWidget(self.template_entry)
@@ -111,6 +114,7 @@ class SettingsPanel(QWidget):
         self.playlist_template_entry.setText(
             self.settings.get("playlist_output", "{list-name}/{list-position} - {artists} - {title}.{output-ext}")
         )
+        self.playlist_template_entry.setToolTip("Template for playlist downloads")
         self.playlist_template_entry.textChanged.connect(lambda: self._update_playlist_example())
         self.playlist_template_entry.textChanged.connect(lambda: self.settings_changed.emit())
         playlist_layout.addWidget(self.playlist_template_entry)
@@ -139,6 +143,7 @@ class SettingsPanel(QWidget):
         self.threads_slider.setMinimum(1)
         self.threads_slider.setMaximum(16)
         self.threads_slider.setValue(int(self.settings.get("threads", "4")))
+        self.threads_slider.setToolTip("Number of simultaneous downloads (higher = faster but uses more resources)")
         self.threads_slider.valueChanged.connect(lambda v: self.threads_value_label.setText(str(v)))
         self.threads_slider.valueChanged.connect(lambda: self.settings_changed.emit())
         threads_row.addWidget(self.threads_slider)
@@ -154,6 +159,7 @@ class SettingsPanel(QWidget):
         save_btn = QPushButton("💾 Save Settings")
         save_btn.setFixedHeight(34)
         save_btn.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        save_btn.setToolTip("Save all settings to disk")
         save_btn.clicked.connect(self.save_settings_clicked.emit)
         layout.addWidget(save_btn)
 
@@ -168,10 +174,12 @@ class SettingsPanel(QWidget):
         btn_row = QHBoxLayout()
         check_btn = QPushButton("Check")
         check_btn.setStyleSheet("background-color: #333;")
+        check_btn.setToolTip("Check SpotDL installation status")
         check_btn.clicked.connect(self.check_spotdl_installation)
         btn_row.addWidget(check_btn)
 
         install_btn = QPushButton("Install SpotDL")
+        install_btn.setToolTip("Install or update SpotDL via pip")
         install_btn.clicked.connect(self._install_spotdl)
         btn_row.addWidget(install_btn)
         btn_row.addStretch()
@@ -222,6 +230,7 @@ class SettingsPanel(QWidget):
             QPushButton:hover { background-color: #4CAF50; }
         """)
         btn.setFixedHeight(18)
+        btn.setToolTip(f"Insert {tag} tag at cursor position")
         btn.clicked.connect(lambda: self._insert_tag(entry, tag, update_func))
         return btn
 

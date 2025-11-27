@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SpotDL Desktop GUI v2.3
+SpotDL Desktop GUI v2.4.1
 A modern desktop interface for SpotDL - PySide6 version
 Refactored modular architecture
 """

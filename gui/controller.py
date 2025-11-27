@@ -162,6 +162,7 @@ class DownloadController:
                 - update_progress: Function to update progress (queue_id, percent)
                 - update_song_count: Function to update song count (queue_id, current, total)
                 - update_current_song: Function to update current song (queue_id, song_name)
+                - update_skipped_song: Function to update skipped song (queue_id, song_name)
                 - on_complete: Function called on successful completion (queue_id)
                 - on_error: Function called on error (queue_id)
         """
@@ -169,6 +170,7 @@ class DownloadController:
         update_progress = callbacks.get('update_progress', lambda qid, pct: None)
         update_song_count = callbacks.get('update_song_count', lambda qid, cur, tot: None)
         update_current_song = callbacks.get('update_current_song', lambda qid, song: None)
+        update_skipped_song = callbacks.get('update_skipped_song', lambda qid, song: None)
         on_complete = callbacks.get('on_complete', lambda qid: None)
         on_error = callbacks.get('on_error', lambda qid: None)
 
@@ -183,12 +185,19 @@ class DownloadController:
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
-                cwd=download_folder
+                cwd=download_folder,
+                encoding='utf-8',
+                errors='replace'  # Handle encoding errors gracefully
             )
+
+            # Track multi-line skip messages
+            pending_skip_lines = []
+            in_skip_message = False
 
             # Monitor output
             for line in process.stdout:
                 log(line)
+                line_stripped = line.strip()
 
                 # Parse "Found X songs" message
                 if "Found" in line and "song" in line:
@@ -198,28 +207,49 @@ class DownloadController:
                         update_song_count(queue_id, 0, total_songs)
 
                 # Parse "Downloaded" message (completed download)
-                # Format: Downloaded "Song Name": URL (may wrap across lines)
-                if line.strip().startswith("Downloaded"):
-                    # Match everything between quotes, or up to colon if line wrapped
+                elif line_stripped.startswith("Downloaded"):
+                    in_skip_message = False
+                    pending_skip_lines = []
+                    # Match everything between quotes
                     match = re.search(r'Downloaded "([^"]+)"', line)
                     if not match:
-                        # Line might be wrapped, try to get partial song name
                         match = re.search(r'Downloaded "(.+)', line)
                     if match:
                         song_name = match.group(1).strip()
                         update_current_song(queue_id, song_name)
 
-                # Parse "Skipping" message (already exists/duplicate)
-                # Format: "Skipping Artist - Song (file already exists) (duplicate)"
-                elif line.strip().startswith("Skipping"):
-                    # Extract song name between "Skipping " and " (file"
-                    match = re.search(r'Skipping (.+?) \(file already exists\)', line)
-                    if match:
-                        song_name = match.group(1)
-                        update_current_song(queue_id, song_name)
+                # Handle "Skipping" messages (can span multiple lines)
+                elif line_stripped.startswith("Skipping"):
+                    in_skip_message = True
+                    pending_skip_lines = [line_stripped]
+                    
+                    # Check if complete on one line
+                    if "(duplicate)" in line_stripped:
+                        # Complete message - extract song name
+                        match = re.search(r'Skipping (.+?) \(file already exists\)', line_stripped)
+                        song_name = match.group(1).strip() if match else "Unknown"
+                        update_skipped_song(queue_id, song_name)
+                        in_skip_message = False
+                        pending_skip_lines = []
+
+                # Continue accumulating multi-line skip message
+                elif in_skip_message:
+                    pending_skip_lines.append(line_stripped)
+                    
+                    # Check if this line ends the skip message
+                    if "(duplicate)" in line_stripped:
+                        # Combine all lines and try to extract song name
+                        full_message = " ".join(pending_skip_lines)
+                        match = re.search(r'Skipping (.+?) \(file already exists\)', full_message)
+                        song_name = match.group(1).strip() if match else "Unknown"
+                        update_skipped_song(queue_id, song_name)
+                        in_skip_message = False
+                        pending_skip_lines = []
 
                 # Parse "LookupError" message (song not found)
                 elif "LookupError: No results found for song:" in line:
+                    in_skip_message = False
+                    pending_skip_lines = []
                     match = re.search(r'No results found for song: (.+)', line)
                     if match:
                         song_name = match.group(1).strip()

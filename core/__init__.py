@@ -1,6 +1,6 @@
 """
-SpotDL GUI Core Package
-Backend logic for queue management and metadata handling
+SpotDL GUI Package
+Modular PySide6-based desktop interface for SpotDL
 """
 
-__version__ = "2.4.0"
+__version__ = "2.4.2"

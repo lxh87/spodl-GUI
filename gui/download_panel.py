@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
     QLineEdit, QComboBox, QCheckBox, QFrame, QApplication
 )
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QFont
 from typing import Dict, Any
 
@@ -74,22 +74,65 @@ class DownloadPanel(QWidget):
         url_header.addWidget(self.clipboard_monitor_check)
         url_layout.addLayout(url_header)
 
-        # URL input
+        # URL input with clear button
         url_row = QHBoxLayout()
         url_row.setSpacing(4)
+        
+        # Container for URL entry with embedded clear button
+        url_container = QFrame()
+        url_container.setStyleSheet("""
+            QFrame {
+                background-color: #252525;
+                border: 1px solid #333;
+                border-radius: 4px;
+            }
+            QFrame:focus-within {
+                border: 1px solid #4CAF50;
+            }
+        """)
+        url_container_layout = QHBoxLayout(url_container)
+        url_container_layout.setContentsMargins(0, 0, 4, 0)
+        url_container_layout.setSpacing(0)
+        
         self.url_entry = QLineEdit()
         self.url_entry.setPlaceholderText("Paste Spotify/YouTube URL...")
         self.url_entry.setToolTip("Enter Spotify/YouTube URL, search query, or special keywords (saved, all-user-playlists, all-user-followed-artists)")
         self.url_entry.setFixedHeight(28)
+        self.url_entry.setStyleSheet("""
+            QLineEdit {
+                background-color: transparent;
+                border: none;
+                padding: 5px;
+                padding-right: 0;
+            }
+        """)
         self.url_entry.textChanged.connect(lambda: self.settings_changed.emit())
-        url_row.addWidget(self.url_entry)
-
-        clear_btn = QPushButton("✕")
-        clear_btn.setFixedSize(28, 28)
-        clear_btn.setStyleSheet("padding: 0; font-size: 14pt; font-weight: bold; color: #888;")
-        clear_btn.setToolTip("Clear URL field")
-        clear_btn.clicked.connect(self._clear_url)
-        url_row.addWidget(clear_btn)
+        url_container_layout.addWidget(self.url_entry)
+        
+        # Clear button inside URL field
+        self.clear_btn = QPushButton("✕")
+        self.clear_btn.setFixedSize(22, 22)
+        self.clear_btn.setCursor(Qt.PointingHandCursor)
+        self.clear_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                color: #666;
+                font-size: 12px;
+                font-weight: bold;
+                padding: 0;
+            }
+            QPushButton:hover {
+                color: #F44336;
+                background-color: rgba(244, 67, 54, 0.1);
+                border-radius: 11px;
+            }
+        """)
+        self.clear_btn.setToolTip("Clear URL field")
+        self.clear_btn.clicked.connect(self._clear_url)
+        url_container_layout.addWidget(self.clear_btn)
+        
+        url_row.addWidget(url_container)
 
         paste_btn = QPushButton("📋")
         paste_btn.setFixedSize(28, 28)

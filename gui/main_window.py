@@ -49,10 +49,11 @@ class MainWindow(QMainWindow):
     """
 
     # Qt Signals for thread-safe GUI updates
-    create_card_signal = Signal(str, dict)
+    create_card_signal = Signal(str, dict, bool)  # queue_id, metadata, is_paused
     update_metadata_signal = Signal(str, dict)
     update_progress_signal = Signal(str, int)
     update_current_song_signal = Signal(str, str)
+    update_skipped_song_signal = Signal(str, str)  # queue_id, song_name
     update_song_count_signal = Signal(str, int, int)
 
     def __init__(self):
@@ -141,19 +142,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.version_label)
 
         layout.addStretch()
-
-        # Music folder button
-        open_folder_btn = QPushButton("📁 Music")
-        open_folder_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #333;
-                font-size: 9pt;
-                padding: 6px 4px;
-            }
-            QPushButton:hover { background-color: #444; }
-        """)
-        open_folder_btn.clicked.connect(self._open_download_folder)
-        layout.addWidget(open_folder_btn)
+        
+        # Note: Music folder button moved to queue panel
 
     def _create_main_tab(self):
         """Create main downloads tab"""
@@ -166,10 +156,10 @@ class MainWindow(QMainWindow):
         self.main_splitter = QSplitter(Qt.Horizontal)
         self.main_splitter.setChildrenCollapsible(False)
 
-        # Download panel (left)
+        # Download panel (left) - removed maxWidth to allow more splitter range
         self.download_panel = DownloadPanel(self.settings)
-        self.download_panel.setMinimumWidth(280)
-        self.download_panel.setMaximumWidth(420)
+        self.download_panel.setMinimumWidth(260)
+        # No max width - allows splitter to go further right
         self.main_splitter.addWidget(self.download_panel)
 
         # Queue panel (right)
@@ -177,7 +167,7 @@ class MainWindow(QMainWindow):
             auto_download=self.settings.get("auto_download", True),
             auto_clear=self.settings.get("auto_clear_completed", False)
         )
-        self.queue_panel.setMinimumWidth(450)
+        self.queue_panel.setMinimumWidth(400)
         self.main_splitter.addWidget(self.queue_panel)
 
         self.main_splitter.setSizes([340, 860])
@@ -202,6 +192,8 @@ class MainWindow(QMainWindow):
         self.queue_panel.pause_queue_clicked.connect(self._pause_queue)
         self.queue_panel.clear_completed_clicked.connect(self._clear_completed_items)
         self.queue_panel.auto_download_changed.connect(self._on_auto_download_changed)
+        self.queue_panel.open_folder_clicked.connect(self._open_download_folder)
+        self.queue_panel.delete_job_clicked.connect(self._delete_queue_item)
 
         # Settings panel signals
         self.settings_panel.save_settings_clicked.connect(self._save_settings)
@@ -214,6 +206,7 @@ class MainWindow(QMainWindow):
         self.update_metadata_signal.connect(self._update_metadata_wrapper)
         self.update_progress_signal.connect(self._update_progress_wrapper)
         self.update_current_song_signal.connect(self._update_current_song_wrapper)
+        self.update_skipped_song_signal.connect(self._update_skipped_song_wrapper)
         self.update_song_count_signal.connect(self._update_song_count_wrapper)
 
         # Enable clipboard monitoring by default
@@ -252,8 +245,11 @@ class MainWindow(QMainWindow):
         queue_id = str(hash(query + timestamp))
         content_type = self._get_content_type(query)
 
+        # Determine if queue is paused for initial card state
+        is_paused = self.queue_manager.paused or not self.queue_panel.is_auto_download_enabled()
+
         metadata = {'name': 'Loading...', 'artist': 'Fetching...', 'type': content_type}
-        self.create_card_signal.emit(queue_id, metadata)
+        self.create_card_signal.emit(queue_id, metadata, is_paused)
 
         queue_item = QueueItem(
             queue_id=queue_id, query=query, status='pending',
@@ -279,6 +275,9 @@ class MainWindow(QMainWindow):
         elif self.queue_manager.paused:
             self.queue_manager.resume_queue()
             self.queue_panel.log("▶ Queue resumed\n")
+        
+        # Update all cards to show they're no longer paused
+        self.queue_panel.update_all_cards_paused_state(False)
         self._update_queue_status()
 
     def _pause_queue(self):
@@ -286,11 +285,21 @@ class MainWindow(QMainWindow):
         if self.queue_manager.running and not self.queue_manager.paused:
             self.queue_manager.pause_queue()
             self.queue_panel.log("⏸ Queue paused\n")
+            
+            # Update all pending cards to show paused state
+            self.queue_panel.update_all_cards_paused_state(True)
         self._update_queue_status()
 
     def _on_auto_download_changed(self, enabled: bool):
         """Handle auto-download toggle"""
         self.queue_panel.log(f"{'🔄 Auto-download enabled' if enabled else '⏹ Auto-download disabled'}\n")
+        
+        # If auto-download is disabled, show paused state on pending cards
+        if not enabled:
+            self.queue_panel.update_all_cards_paused_state(True)
+        elif not self.queue_manager.paused:
+            self.queue_panel.update_all_cards_paused_state(False)
+            
         self._update_queue_status()
 
     def _clear_completed_items(self):
@@ -367,13 +376,21 @@ class MainWindow(QMainWindow):
             del self.auto_clear_timers[queue_id]
         self._update_queue_status()
 
+    def _delete_queue_item(self, queue_id: str):
+        """Delete a queue item (from delete button click)"""
+        # Try to cancel if it's downloading
+        self.queue_manager.cancel_download(queue_id)
+        # Remove from UI and queue
+        self._remove_queue_item_by_id(queue_id)
+        self.queue_panel.log(f"🗑️ Removed job from queue\n")
+
     # =========================================================================
     # QUEUE CARD WRAPPERS
     # =========================================================================
 
-    def _create_queue_card_wrapper(self, queue_id: str, metadata: dict):
+    def _create_queue_card_wrapper(self, queue_id: str, metadata: dict, is_paused: bool):
         """Wrapper to create queue card from signal"""
-        self.queue_panel.add_queue_card(queue_id, metadata)
+        self.queue_panel.add_queue_card(queue_id, metadata, is_paused)
 
     def _update_metadata_wrapper(self, queue_id: str, metadata: dict):
         """Wrapper to update card metadata from signal"""
@@ -392,6 +409,12 @@ class MainWindow(QMainWindow):
         card = self.queue_panel.get_queue_card(queue_id)
         if card:
             card.update_current_song(song)
+
+    def _update_skipped_song_wrapper(self, queue_id: str, song: str):
+        """Wrapper to update skipped song from signal"""
+        card = self.queue_panel.get_queue_card(queue_id)
+        if card:
+            card.update_skipped_song(song)
 
     def _update_song_count_wrapper(self, queue_id: str, completed: int, total: int):
         """Wrapper to update song count from signal"""
@@ -430,6 +453,7 @@ class MainWindow(QMainWindow):
             'update_progress': lambda qid, pct: self.update_progress_signal.emit(qid, pct),
             'update_song_count': lambda qid, cur, tot: self.update_song_count_signal.emit(qid, cur, tot),
             'update_current_song': lambda qid, song: self.update_current_song_signal.emit(qid, song),
+            'update_skipped_song': lambda qid, song: self.update_skipped_song_signal.emit(qid, song),
             'on_complete': self._on_download_complete,
             'on_error': self._on_download_error
         }
@@ -499,10 +523,21 @@ class MainWindow(QMainWindow):
             self.clipboard_monitor.disable()
 
     def _on_clipboard_url_detected(self, url: str):
-        """Handle URL detected from clipboard"""
+        """Handle URL detected from clipboard - auto-add to queue"""
+        # Extra validation - make sure it's a clean URL
+        url = url.strip()
+        
+        # Don't auto-add if URL looks suspicious (too long, contains error text, etc.)
+        if len(url) > 250 or '\n' in url:
+            return
+            
         self.download_panel.set_url(url)
         self.queue_panel.log(f"📋 Link detected: {url[:50]}...\n")
         self._flash_taskbar()
+        
+        # Auto-add the job to queue
+        settings = self.download_panel.get_settings()
+        self._add_to_queue(url, settings)
 
     def _flash_taskbar(self):
         """Flash taskbar to get attention"""

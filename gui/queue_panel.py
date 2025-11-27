@@ -28,6 +28,8 @@ class QueuePanel(QWidget):
     clear_completed_clicked = Signal()
     auto_download_changed = Signal(bool)
     auto_clear_changed = Signal(bool)
+    open_folder_clicked = Signal()  # New signal for opening download folder
+    delete_job_clicked = Signal(str)  # queue_id - emitted when delete button on card is clicked
 
     def __init__(self, auto_download: bool = True, auto_clear: bool = False, parent=None):
         """
@@ -90,7 +92,7 @@ class QueuePanel(QWidget):
             QPushButton:disabled { background-color: #2b2b2b; color: #555; }
         """)
         self.pause_btn.setFixedHeight(24)
-        self.pause_btn.setToolTip("Pause current download")
+        self.pause_btn.setToolTip("Pause queue processing")
         self.pause_btn.clicked.connect(self.pause_queue_clicked.emit)
         self.pause_btn.setEnabled(False)
         controls_layout.addWidget(self.pause_btn)
@@ -104,6 +106,17 @@ class QueuePanel(QWidget):
         self.clear_btn.setToolTip("Clear completed downloads from queue")
         self.clear_btn.clicked.connect(self.clear_completed_clicked.emit)
         controls_layout.addWidget(self.clear_btn)
+
+        # Music folder button (moved from sidebar)
+        self.open_folder_btn = QPushButton("📁 Music Folder")
+        self.open_folder_btn.setStyleSheet("""
+            QPushButton { background-color: #424242; font-size: 8pt; padding: 4px 8px; }
+            QPushButton:hover { background-color: #555; }
+        """)
+        self.open_folder_btn.setFixedHeight(24)
+        self.open_folder_btn.setToolTip("Open download folder in file explorer")
+        self.open_folder_btn.clicked.connect(self.open_folder_clicked.emit)
+        controls_layout.addWidget(self.open_folder_btn)
 
         controls_layout.addStretch()
 
@@ -187,6 +200,7 @@ class QueuePanel(QWidget):
             QPushButton:hover { background-color: #444; }
         """)
         clear_log_btn.setFixedHeight(16)
+        clear_log_btn.setToolTip("Clear the output log")
         clear_log_btn.clicked.connect(self.clear_log)
         log_header.addWidget(clear_log_btn)
         log_layout.addLayout(log_header)
@@ -214,18 +228,21 @@ class QueuePanel(QWidget):
         # Create logger
         self.logger = ThreadSafeLogger(self.queue_textbox)
 
-    def add_queue_card(self, queue_id: str, metadata: Dict[str, Any]) -> QueueCard:
+    def add_queue_card(self, queue_id: str, metadata: Dict[str, Any], is_paused: bool = False) -> QueueCard:
         """
         Add a new queue card
 
         Args:
             queue_id: Unique identifier for the queue item
             metadata: Dictionary with name, artist, image_url
+            is_paused: Whether the queue is currently paused
 
         Returns:
             Created QueueCard widget
         """
-        card = QueueCard(queue_id, metadata, self.network_manager, self)
+        card = QueueCard(queue_id, metadata, self.network_manager, is_paused, self)
+        # Connect delete signal
+        card.delete_clicked.connect(self.delete_job_clicked.emit)
         self.queue_preview_layout.insertWidget(
             self.queue_preview_layout.count() - 1,
             card
@@ -257,6 +274,16 @@ class QueuePanel(QWidget):
             QueueCard widget or None
         """
         return self.queue_cards.get(queue_id)
+
+    def update_all_cards_paused_state(self, is_paused: bool):
+        """
+        Update all pending cards with paused state
+        
+        Args:
+            is_paused: Whether queue is paused
+        """
+        for card in self.queue_cards.values():
+            card.set_paused_state(is_paused)
 
     def update_stats(self, stats_text: str):
         """

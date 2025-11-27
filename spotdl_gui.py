@@ -16,9 +16,15 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("SpotDL GUI")
     
-    # Set application icon
+    # Set application icon for window and taskbar
     app_icon = QIcon("icon.png")
     app.setWindowIcon(app_icon)
+    
+    # Set taskbar-specific icon (Windows taskbar)
+    if sys.platform == "win32":
+        import ctypes
+        # Load the icon for taskbar display
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("SpotDL.GUI.v2.4.3")
     
     window = MainWindow()
     window.show()

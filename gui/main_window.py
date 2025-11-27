@@ -68,6 +68,10 @@ class MainWindow(QMainWindow):
         self.resize(1400, 900)
         self.setMinimumSize(1100, 700)
         self.setStyleSheet(get_dark_theme_stylesheet())
+        
+        # Set window icon for taskbar display
+        from PySide6.QtGui import QIcon
+        self.setWindowIcon(QIcon("icon.png"))
 
         # Initialize components
         self.clipboard_monitor = ClipboardMonitor()

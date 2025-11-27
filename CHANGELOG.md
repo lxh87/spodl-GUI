@@ -10,8 +10,15 @@
    - Modern, minimalist flat design suitable for desktop application
    - Scalable design for various window sizes and system displays
 
+2. **Taskbar Icon Enhancement**
+   - Added Windows-specific taskbar icon support
+   - Set application user model ID for proper taskbar grouping
+   - Ensured consistent icon display across window and taskbar
+   - Added window-level icon setting for better compatibility
+
 ### Technical Details
-- `spotdl_gui.py`: Added `QIcon` import and `app.setWindowIcon(app_icon)` to load custom icon
+- `spotdl_gui.py`: Added `QIcon` import, `app.setWindowIcon(app_icon)`, and Windows taskbar support
+- `gui/main_window.py`: Added `self.setWindowIcon(QIcon("icon.png"))` for window-level icon
 - `icon.png`: New 512x512px PNG icon file added to project root
 
 ---
